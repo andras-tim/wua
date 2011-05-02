@@ -612,7 +612,7 @@ Function chkAgentSets()
     'Server
     strValueName = "WUServer"
     objReg.GetStringValue HKEY_LOCAL_MACHINE, strKeyPath, strValueName, regWSUSServer
-    If regWSUSServer = "" Then regWSUSServer = "Microsoft Windows Update"
+    If IsNull(regWSUSServer) Or Trim(regWSUSServer) = "" Then regWSUSServer = "Microsoft Windows Update"
 
     'Scheduled
     retScheduled = chkAgentSet_getSchedule
@@ -664,7 +664,7 @@ Function chkAgentSet_getTargetGroup(strKeyPath)
     strValueName = "TargetGroup"
     ret = "Not specified"
     objReg.GetStringValue HKEY_LOCAL_MACHINE, strKeyPath, strValueName, regTargetGroup
-    If regTargetGroup <> "" Then ret = regTargetGroup
+    If regTargetGroup <> "" And Not IsNull(regTargetGroup) Then ret = regTargetGroup
     chkAgentSet_getTargetGroup = ret
 End Function
 
@@ -698,7 +698,10 @@ Function updateSearcher()
     If Err.Number <> 0 Then
         en = Err.Number: ed = Err.Description
         On Error GoTo 0
-        If Not wuaErrorHandler(strObjID, en, ed) Then Exit Function
+        If Not wuaErrorHandler(strObjID, en, ed) Then
+            updateSearcher = False
+            Exit Function
+        End If
     End If
     On Error GoTo 0
 
@@ -749,6 +752,7 @@ Function wuaErrorHandler(strObjID, errNum, errDesc)' Boolean :: true=all ok; fal
         commonErrorHandler strObjID, en, ed, boolFatal
     Else
         print_debug strObjID, "Hotfix applied, restart the update process"
+        wuaErrorHandler = False
         Exit Function
     End if
 
@@ -827,7 +831,10 @@ Function detectNow()
     If Err.Number <> 0 Then
         en = Err.Number: ed = Err.Description
         On Error GoTo 0
-        If Not wuaErrorHandler(strObjID, en, ed) Then Exit Function
+        If Not wuaErrorHandler(strObjID, en, ed) Then
+            detectNow = False
+            Exit Function
+        End If
     End If
     On Error GoTo 0
 
@@ -1013,12 +1020,14 @@ Do
     If aOK Then aOK = detectNow
 
     'Check update count
-    If aOK And searchResult.updates.Count = 0 Then
-        print_debug "ScriptMain", "There's no new update"
-        'Print results
-        getUpdateLog
-        sendReport
-        endOfScript
+    If aOK Then
+        If searchResult.updates.Count = 0 Then
+            print_debug "ScriptMain", "There's no new update"
+            'Print results
+            getUpdateLog
+            sendReport
+            endOfScript
+        End If
     End If
 
     'Downloading updates
