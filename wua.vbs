@@ -182,7 +182,7 @@ Sub print_debug(strObj, strMsg)
     aTime = FormatDateTime(Time, iTimeFormat)
     If (Right(aMsg, 2) = vbCrLf) Then aMsg = Left(strMsg, Len(strMsg) - 2)
     aMsg = Replace(aMsg, vbCrLf, vbCrLf & vbTab & vbTab)
-    logFile.writeline "[" & aTime & "]" & vbTab & strObj & vbTab & aMsg
+    logFile.writeline "[" & aTime & "] " & strObj & vbTab & aMsg
 End Sub
 
 '***********************************************************************************************************************
@@ -220,7 +220,7 @@ End Function
 
 '***********************************************************************************************************************
 Sub commonErrorHandler(strObjID, errNum, errDesc, boolFatal)
-    print_debug strObjID, "Error 0x" & Hex(errNum) & " has occured.  Description: '" & errDesc & "'"
+    print_debug strObjID, "Error 0x" & Hex(errNum) & " has occured.  Description: " & errDesc
     If boolFatal Then exitScript 1
 End Sub
 
@@ -674,11 +674,11 @@ Function chkAgentSet_getretWUAmode()
 
     ret = "-"
     Select Case updateinfo.notificationlevel
-        Case 0: ret = "WUA mode: WU agent is not configured."
-        Case 1: ret = "WUA mode: WU agent is DISABLED."
-        Case 2: ret = "WUA mode: Users are prompted to approve updates prior to installing"
-        Case 3: ret = "WUA mode: Updates are downloaded automatically, and users are prompted to install."
-        Case 4: ret = "WUA mode: Updates are downloaded and installed automatically at a pre-determined time."
+        Case 0: ret = "WU agent is not configured."
+        Case 1: ret = "WU agent is DISABLED."
+        Case 2: ret = "Users are prompted to approve updates prior to installing"
+        Case 3: ret = "Updates are downloaded automatically, and users are prompted to install."
+        Case 4: ret = "Updates are downloaded and installed automatically at a pre-determined time."
     End Select
     chkAgentSet_getretWUAmode = ret
 End Function
