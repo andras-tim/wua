@@ -762,6 +762,8 @@ Function wuaErrorHandler(strObjID, errNum, errDesc, ifUnhandledBeFatal)' Boolean
     Select Case "0x" & UCase(Hex(errNum))
         Case "0x80072F78", "0x80072EFD", "0x8024002B", "0x7", "0x8024400D", "0x8024A000", "0x80072F8F"
             boolFatal = True
+        Case "0x8024402C"
+            boolFatal = False
         Case Else
             boolFatal = ifUnhandledBeFatal
     End Select
