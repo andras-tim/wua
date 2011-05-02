@@ -1,4 +1,5 @@
-'Windows Update Agent - Created by Andras TIM @ 2010
+'Windows Update Agent Script
+'Created by Andras TIM @ 2010
 'It based on http://community.spiceworks.com/scripts/show_download/82 from Rob Dunn
 
 'RETURN CODE:
@@ -12,6 +13,8 @@
 
 '***********************************************************************************************************************' Declare
 '***********************************************************************************************************************
+Const scriptVersion = "1.2"
+
 Const HKEY_CURRENT_USER = &H80000001
 Const HKEY_LOCAL_MACHINE = &H80000002
 Const ForReading = 1
@@ -129,6 +132,9 @@ On Error GoTo 0
 
 'Open logfile
 Set logFile = fso.OpenTextFile(logfilePath, ForAppending, True)
+
+'Print header (version info)
+print_debug "ScriptInit", "Windows Update Agent Script v" & scriptVersion
 
 'Check the start environment
 boolCScript = (InStr(UCase(wscript.FullName), "\CSCRIPT.EXE") > 0)
