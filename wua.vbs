@@ -13,7 +13,7 @@
 
 '***********************************************************************************************************************' Declare
 '***********************************************************************************************************************
-Const scriptVersion = "1.2"
+Const scriptVersion = "1.3"
 
 Const HKEY_CURRENT_USER = &H80000001
 Const HKEY_LOCAL_MACHINE = &H80000002
@@ -107,7 +107,7 @@ boolEmailReportEnabled = True
 ' needed.
 ' False = off, don't send email if no updates needed and no reboot needed
 ' True = on always send email
-boolEmailIfAllOK = True
+boolEmailIfAllOK = False
 
 'boolFullDNSName Determines if the email subject contains the full dns name of
 ' the server or just the computer name.
