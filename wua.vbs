@@ -778,8 +778,11 @@ Function wuaErrorHandler(strObjID, errNum, errDesc, ifUnhandledBeFatal)' Boolean
     print_debug strObjID, "Checking hotfixes for 0x" & Hex(errNum) & " update error..."
     res = errorHotfixes(errNum)
     If Not res Then
-        en = errNum: ed = "Could not find solution for previous error"
-        commonErrorHandler strObjID, en, ed, boolFatal
+        print_debug strObjID, "The previous attempts have not solved the problem. Will not try again!"
+        If boolFatal Then
+            wuaErrorHandler = False
+            exitScript 1
+        End If
     Else
         print_debug strObjID, "Hotfix applied, restart the update process"
         wuaErrorHandler = False
@@ -796,8 +799,6 @@ Function errorHotfixes(errNum)'boolean :: true if we have hotfix for it
 
     'Check the last applyed hotfix ID (for recursive hotfixapply check)
     If lastTryedHotfix = hexErrNum Then
-        en = errNum: ed = "The known hotfixes could not fix the problem!"
-        commonErrorHandler strObjID, en, ed, False
         errorHotfixes = False
         Exit Function
     End If
