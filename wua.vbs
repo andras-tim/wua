@@ -731,7 +731,7 @@ Function updateSearcher()
     updateSearcher = True
 End Function
 
-'***********************************************************************************************************************' be kell kotni oket
+'***********************************************************************************************************************
 Function wuaGetErrorDescription(errNum)' Array :: [""] if we don't know description; ["ID", "Desc"] if we know the error
     hexErrNum = "0x" & UCase(Hex(errNum))
     ret = Null
@@ -754,7 +754,7 @@ Function wuaGetErrorDescription(errNum)' Array :: [""] if we don't know descript
     wuaGetErrorDescription = ret
 End Function
 
-'***********************************************************************************************************************' be kell kotni oket
+'***********************************************************************************************************************
 Function wuaErrorHandler(strObjID, errNum, errDesc, ifUnhandledBeFatal)' Boolean :: true=all ok; false=check
     strObjID = "wuaErrorHandler"
 
@@ -794,7 +794,7 @@ Function wuaErrorHandler(strObjID, errNum, errDesc, ifUnhandledBeFatal)' Boolean
     wuaErrorHandler = True
 End Function
 
-'***********************************************************************************************************************' be kell kotni oket
+'***********************************************************************************************************************
 Function errorHotfixes(errNum)'boolean :: true if we have hotfix for it
     strObjID = "errorHotfixes"
     hexErrNum = "0x" & UCase(Hex(errNum))
@@ -827,7 +827,7 @@ Function errorHotfixes(errNum)'boolean :: true if we have hotfix for it
             ret = ret Or runCommand("regsvr32 /s Initpki.dll")
 
         Case Else
-            ret = False'Hotfix not fpund
+            ret = False 'Hotfix not found
     End Select
 
     'Store the last applyed hotfix ID (for recursive hotfixapply check)
