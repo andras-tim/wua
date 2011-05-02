@@ -32,13 +32,13 @@ Const cdoSMTPconnectiontimeout = "http://schemas.microsoft.com/cdo/configuration
 'Public Objects
 Dim wshshell, wshsysenv, fso, objADInfo, updateAgentSession, autoUpdateClient, searchResult, logFile, objWMIService, objReg
 'Settings
-Dim update_criteria, wuaInstallerPath, wuLogPath, logfilePath, strWUAgentVersion, strLocaleVerDelim, boolEmailReportEnabled, boolEmailIfAllOK, boolFullDNSName, iTimeFormat
+Dim update_criteria, wuaInstallerPath, wuLogPath, wuErrorlistPath, logfilePath, strWUAgentVersion, strLocaleVerDelim, boolEmailReportEnabled, boolEmailIfAllOK, boolFullDNSName, iTimeFormat
 Dim strMailFrom, strMail_to, strMail_subject, strMail_smtpHost, strMail_smtpPort, strMail_smtpAuthType, strMail_smtpAuthID, strMail_smtpAuthPassword
 
 'State variables
 Dim boolCScript, regWSUSServer, boolUpdatesInstalled, boolRebootRequired
 Dim statInProgress, statInstalled, statCompleteWithErrors, statFailed, statAborted, intLinesBefore
-Dim lastTryedHotfix
+Dim lastTryedHotfix, wuErrorlist
 
 '*********************************************************************************************************************** PreInit
 '***********************************************************************************************************************
@@ -68,6 +68,9 @@ wuaInstallerPath = """\\FIXME.SERVER\SHARE\WindowsUpdate\WindowsUpdateAgent30-x8
 
 'Windows Update log file path
 wuLogPath = wshsysenv("WINDIR") & "\WindowsUpdate.log"
+
+'Windows Update's error description file
+wuErrorlistPath = "wua-errorlist.csv"
 
 'Logfile path
 'logfilePath = wshsysenv("SYSTEMDRIVE") & "\" & "wua-last.log"
@@ -162,6 +165,9 @@ print_debug "ScriptMain", "Script started"
 'Init the applyed hotfix list
 lastTryedHotfix = ""
 
+'Init Windows Update's errorlist
+wuErrorlist = ""
+
 '*********************************************************************************************************************** Common functions
 '***********************************************************************************************************************
 
@@ -216,6 +222,22 @@ Function getLineRange(strText,intStart,intEnd)
     End If
 
     getLineRange = ret
+End Function
+
+'***********************************************************************************************************************
+Function findLine(strText,strFind)
+    strObjID = "findLine"
+    ret = ""
+
+    i = InStr(1, strText, strFind)
+    If i > 0 Then
+        j = InStr(i + 1, strText, vbCrLf, vbTextCompare)
+        If j < i Then j = Len(strText) + 1
+
+        ret = Mid(strText, i, j - i)
+    End If
+
+    findLine = ret
 End Function
 
 '***********************************************************************************************************************
@@ -698,7 +720,7 @@ Function updateSearcher()
     If Err.Number <> 0 Then
         en = Err.Number: ed = Err.Description
         On Error GoTo 0
-        If Not wuaErrorHandler(strObjID, en, ed) Then
+        If Not wuaErrorHandler(strObjID, en, ed, True) Then
             updateSearcher = False
             Exit Function
         End If
@@ -710,38 +732,46 @@ Function updateSearcher()
 End Function
 
 '***********************************************************************************************************************' be kell kotni oket
-Function wuaErrorHandler(strObjID, errNum, errDesc)' Boolean :: true=all ok; false=check
-    Dim res, arrError
+Function wuaGetErrorDescription(errNum)' Array :: [""] if we don't know description; ["ID", "Desc"] if we know the error
+    hexErrNum = "0x" & UCase(Hex(errNum))
+    ret = Null
 
-    boolFatal = False
+    'Init errorlist
+    If wuErrorlist = "" Then
+        wuErrorlist = getFileToText(wuErrorlistPath)
+    End If
+
+    'Exist errorlist
+    If Not wuErrorlist = "" Then
+        txt = findLine(wuErrorlist, vbCrLf & hexErrNum & vbTab)
+        If Not txt = "" Then
+            arr = Split(Right(txt, Len(txt) - 2), vbTab)
+            ReDim Preserve arr(2)
+            ret = Array(arr(1), arr(2))
+        End If
+    End If
+
+    wuaGetErrorDescription = ret
+End Function
+
+'***********************************************************************************************************************' be kell kotni oket
+Function wuaErrorHandler(strObjID, errNum, errDesc, ifUnhandledBeFatal)' Boolean :: true=all ok; false=check
+    strObjID = "wuaErrorHandler"
+
+    'Check fatal
     Select Case "0x" & UCase(Hex(errNum))
-        Case "0x80072F78"
+        Case "0x80072F78", "0x80072EFD", "0x8024002B", "0x7", "0x8024400D", "0x8024A000"
             boolFatal = True
-            arrError = Array("ERROR_HTTP_INVALID_SERVER_RESPONSE", "The server response could not be parsed")
-        Case "0x8024402C"
-            arrError = Array("WU_E_PT_WINHTTP_NAME_NOT_RESOLVED", "Winhttp SendRequest/ReceiveResponse failed with 0x2ee7 error. Either the proxy server or target server name can not be resolved. Corresponding to ERROR_WINHTTP_NAME_NOT_RESOLVED. Stop/Restart service or reboot the machine if you see this error frequently.")
-        Case "0x80072EFD"
-            boolFatal = True
-            arrError = Array("ERROR_INTERNET_CANNOT_CONNECT","The attempt to connect to the server failed.")
-        Case "0x8024401B"
-            arrError = Array("SUS_E_PT_HTTP_STATUS_PROXY_AUTH_REQ","Http status 407 - proxy authentication required")
-        Case "0x8024002B"
-            boolFatal = True
-            arrError = Array("WU_E_LEGACYSERVER","The Sus server we are talking to is a Legacy Sus Server (Sus Server 1.0)")
-        Case "0x7"
-            boolFatal = True
-            arrError = Array("-","Out of memory - In most cases, this error will be resolved by rebooting the client.")
-        Case "0x8024400D"
-            boolFatal = True
-            arrError = Array("SUS_E_PT_SOAP_CLIENT","SOAP_E_CLIENT  The message was malformed or incomplete. No reason to retry unless problem fixed.")
-        Case "0x8024A000"
-            boolFatal = True
-            arrError = Array("WU_E_AU_NOSERVICE","AU was unable to service incoming AU calls. Can not perform non-interactive scan if AU is interactive-only.")
         Case Else
-            arrError = Array("-","Unhandled error occured. See the 'http://inetexplorer.mvps.org/answers/63.html' page for more information")
+            boolFatal = ifUnhandledBeFatal
     End Select
 
-    en = errNum: ed = "[" & arrError(0) & "] " & arrError(1)
+    'Get error description
+    arrError = wuaGetErrorDescription(errNum)
+    If IsNull(arrError) Then arrError = Array("-","Unknown error")
+
+    'Print error
+    en = errNum: ed = arrError(0) & vbCrLf & "Details: " & arrError(1)
     commonErrorHandler strObjID, en, ed, False
 
     'Try hotfix it
@@ -755,7 +785,6 @@ Function wuaErrorHandler(strObjID, errNum, errDesc)' Boolean :: true=all ok; fal
         wuaErrorHandler = False
         Exit Function
     End if
-
 
     wuaErrorHandler = True
 End Function
@@ -831,7 +860,7 @@ Function detectNow()
     If Err.Number <> 0 Then
         en = Err.Number: ed = Err.Description
         On Error GoTo 0
-        If Not wuaErrorHandler(strObjID, en, ed) Then
+        If Not wuaErrorHandler(strObjID, en, ed, True) Then
             detectNow = False
             Exit Function
         End If
