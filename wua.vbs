@@ -760,7 +760,7 @@ Function wuaErrorHandler(strObjID, errNum, errDesc, ifUnhandledBeFatal)' Boolean
 
     'Check fatal
     Select Case "0x" & UCase(Hex(errNum))
-        Case "0x80072F78", "0x80072EFD", "0x8024002B", "0x7", "0x8024400D", "0x8024A000"
+        Case "0x80072F78", "0x80072EFD", "0x8024002B", "0x7", "0x8024400D", "0x8024A000", "0x80072F8F"
             boolFatal = True
         Case Else
             boolFatal = ifUnhandledBeFatal
@@ -817,6 +817,11 @@ Function errorHotfixes(errNum)'boolean :: true if we have hotfix for it
             ret = ret Or serviceStop("wuauserv")
             ret = ret Or runCommand("reg add ""HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update"" /v AUOptions /t REG_DWORD /d 2 /f") 'Set: Auto check, never donload
             ret = ret Or serviceStart("wuauserv")
+
+        Case "0x80072F8F"
+            ret = True
+            ret = ret Or runCommand("regsvr32 /s Mssip32.dll")
+            ret = ret Or runCommand("regsvr32 /s Initpki.dll")
 
         Case Else
             ret = False'Hotfix not fpund
