@@ -40,18 +40,21 @@ Dim strMailFrom, strMail_to, strMail_subject, strMail_smtpHost, strMail_smtpPort
     strMail_smtpAuthID, strMail_smtpAuthPassword
 
 'State variables
-Dim boolCScript, regWSUSServer, boolUpdatesInstalled, boolRebootRequired
+Dim strWuaPath, boolCScript, regWSUSServer, boolUpdatesInstalled, boolRebootRequired
 Dim statInProgress, statInstalled, statCompleteWithErrors, statFailed, statAborted, intLinesBefore
 Dim lastTryedHotfix, wuErrorlist
 
 
-'*********************************************************************************************************************** PreInit
+'*********************************************************************************************************************** Init
 '***********************************************************************************************************************
 'Get instances
 Set wshshell = wscript.CreateObject("WScript.Shell")
 Set wshsysenv = wshshell.Environment("PROCESS")
 Set fso = CreateObject("Scripting.FileSystemObject")
 Set objADInfo = CreateObject("ADSystemInfo")
+
+'Get environment information
+strWuaPath = fso.GetParentFolderName(WScript.ScriptFullName)
 
 'Get authentication information
 strDomain = wshsysenv("userdomain")
@@ -62,77 +65,9 @@ strComputer = wshshell.ExpandEnvironmentStrings("%Computername%")
 Set objWMIService = GetObject("winmgmts:{impersonationLevel=impersonate}!\\" & strComputer & "\root\cimv2")
 Set objReg = GetObject("winmgmts:{impersonationLevel=impersonate}!\\" & strComputer & "\root\default:StdRegProv")
 
+'Read user config
+readConfig
 
-'*********************************************************************************************************************** User variables
-'***********************************************************************************************************************
-'Updates filter for updating
-'update_criteria = "IsAssigned=1 and IsHidden=0 and IsInstalled=0 and Type='Software' or Type='Driver'"
-update_criteria = "IsInstalled=0 and DeploymentAction='Installation' or " & _
-    "IsPresent=1 and DeploymentAction='Uninstallation' or " & _
-    "IsInstalled=1 and DeploymentAction='Installation' and RebootRequired=1 or " & _
-    "IsInstalled=0 and DeploymentAction='Uninstallation' and RebootRequired=1"
-
-'Full EXE path to Windows Update Agent installation exe. It will install it slently if the PC needs it
-wuaInstallerPath = """\\FIXME.SERVER\SHARE\WindowsUpdate\WindowsUpdateAgent30-x86.exe"""
-
-'Windows Update log file path
-wuLogPath = wshsysenv("WINDIR") & "\WindowsUpdate.log"
-
-'Windows Update's error description file
-wuErrorlistPath = "wua-errorlist.csv"
-
-'Logfile path
-'logfilePath = wshsysenv("SYSTEMDRIVE") & "\" & "wua-last.log"
-logfilePath = "wua-last.log"
-
-'Mail settings
-strMailFrom = LCase(strComputer)
-strMail_to = "FIXME@EMAIL"
-strMail_subject = "WUA Script - WSUS Update log file from" 'computer name
-strMail_smtpHost = "FIXME.SMTP.SERVER"
-strMail_smtpPort = 25
-'set your SMTP server authentication type. Possible values:cdoAnonymous|cdoBasic|cdoNTLM
-'You do not need to configure an id/pass combo with cdoAnonymous
-strMail_smtpAuthType = "cdoAnonymous"
-strMail_smtpAuthID = ""
-strMail_smtpAuthPassword = ""
-
-'Version number of the Windows Update agent you wish to compare installed version against.  If the version installed is
-'not equal to this version, then it will install the exe referred to in var 'wuaInstallerPath' above.
-'   * version 2.0 SP1 is 5.8.0.2469
-'   * version 3.0     is 7.0.6000.374
-strWUAgentVersion = "7.0.6000.374"
-strLocaleVerDelim = "."
-
-'Turns email function on/off.
-' False = off, don't email
-' True = on, email using default address defined in the var 'strMail_to' above.
-boolEmailReportEnabled = True
-
-'boolEmailIfAllOK Determines if email always sent or only if updates or reboot needed.
-' False = off, don't send email if no updates needed and no reboot needed
-' True = on always send email
-boolEmailIfAllOK = False
-
-'boolFullDNSName Determines if the email subject contains the full dns name of the server or just the computer name.
-' False = off, just use computer name
-' True = on,  use full dns name
-boolFullDNSName = False
-
-'Timestamp format in log
-' 0 = vbGeneralDate - Default. Returns time: hh:mm:ss PM/AM.
-' 3 = vbLongTime - Returns time: hh:mm:ss PM/AM
-' 4 = vbShortTime - Return time: hh:mm
-iTimeFormat = 4
-
-'Allow MS Update Server via Internet
-' False = abort script, when the Agent try to use MS Update Server
-' True = allow MS Update Server as sources of updates
-boolAllowMSUpdateServer = False
-
-
-'*********************************************************************************************************************** Init
-'***********************************************************************************************************************
 'Get ComputerName
 strComputer1 = objADInfo.ComputerName
 On Error Resume Next
@@ -178,6 +113,13 @@ wuErrorlist = ""
 
 
 '*********************************************************************************************************************** Common functions
+'***********************************************************************************************************************
+Function readConfig()
+    cfg = getFileToText("wua.cfg")
+    ExecuteGlobal cfg
+End Function
+
+
 '***********************************************************************************************************************
 Sub print(strMsg)
     aMsg = strMsg
