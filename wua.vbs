@@ -11,7 +11,7 @@
 '<numberOfUpdates: 0-... > <restartRequired: 0/1 >
 
 
-'***********************************************************************************************************************' Declare
+'***********************************************************************************************************************' Declare Globals
 '***********************************************************************************************************************
 Const scriptVersion = "1.0.5"
 
@@ -30,15 +30,20 @@ Const cdoSMTPServerport = "http://schemas.microsoft.com/cdo/configuration/smtpse
 Const cdoSMTPconnectiontimeout = "http://schemas.microsoft.com/cdo/configuration/Connectiontimeout"
 
 'Public Objects
-Dim wshshell, wshsysenv, fso, objADInfo, updateAgentSession, autoUpdateClient, searchResult, logFile, objWMIService, objReg
+Dim wshshell, wshsysenv, fso, objADInfo, updateAgentSession, autoUpdateClient, searchResult, logFile, objWMIService, _
+    objReg
+
 'Settings
-Dim update_criteria, wuaInstallerPath, wuLogPath, wuErrorlistPath, logfilePath, strWUAgentVersion, strLocaleVerDelim, boolEmailReportEnabled, boolEmailIfAllOK, boolFullDNSName, iTimeFormat
-Dim strMailFrom, strMail_to, strMail_subject, strMail_smtpHost, strMail_smtpPort, strMail_smtpAuthType, strMail_smtpAuthID, strMail_smtpAuthPassword
+Dim update_criteria, wuaInstallerPath, wuLogPath, wuErrorlistPath, logfilePath, strWUAgentVersion, strLocaleVerDelim, _
+    boolEmailReportEnabled, boolEmailIfAllOK, boolFullDNSName, iTimeFormat
+Dim strMailFrom, strMail_to, strMail_subject, strMail_smtpHost, strMail_smtpPort, strMail_smtpAuthType, _
+    strMail_smtpAuthID, strMail_smtpAuthPassword
 
 'State variables
 Dim boolCScript, regWSUSServer, boolUpdatesInstalled, boolRebootRequired
 Dim statInProgress, statInstalled, statCompleteWithErrors, statFailed, statAborted, intLinesBefore
 Dim lastTryedHotfix, wuErrorlist
+
 
 '*********************************************************************************************************************** PreInit
 '***********************************************************************************************************************
@@ -57,11 +62,15 @@ strComputer = wshshell.ExpandEnvironmentStrings("%Computername%")
 Set objWMIService = GetObject("winmgmts:{impersonationLevel=impersonate}!\\" & strComputer & "\root\cimv2")
 Set objReg = GetObject("winmgmts:{impersonationLevel=impersonate}!\\" & strComputer & "\root\default:StdRegProv")
 
+
 '*********************************************************************************************************************** User variables
 '***********************************************************************************************************************
 'Updates filter for updating
 'update_criteria = "IsAssigned=1 and IsHidden=0 and IsInstalled=0 and Type='Software' or Type='Driver'"
-update_criteria = "IsInstalled=0 and DeploymentAction='Installation' or IsPresent=1 and DeploymentAction='Uninstallation' or IsInstalled=1 and DeploymentAction='Installation' and RebootRequired=1 or IsInstalled=0 and DeploymentAction='Uninstallation' and RebootRequired=1"
+update_criteria = "IsInstalled=0 and DeploymentAction='Installation' or " & _
+    "IsPresent=1 and DeploymentAction='Uninstallation' or " & _
+    "IsInstalled=1 and DeploymentAction='Installation' and RebootRequired=1 or " & _
+    "IsInstalled=0 and DeploymentAction='Uninstallation' and RebootRequired=1"
 
 'Full EXE path to Windows Update Agent installation exe. It will install it slently if the PC needs it
 wuaInstallerPath = """\\FIXME.SERVER\SHARE\WindowsUpdate\WindowsUpdateAgent30-x86.exe"""
@@ -82,35 +91,30 @@ strMail_to = "FIXME@EMAIL"
 strMail_subject = "WUA Script - WSUS Update log file from" 'computer name
 strMail_smtpHost = "FIXME.SMTP.SERVER"
 strMail_smtpPort = 25
-'set your SMTP server authentication type.
-' Possible values:cdoAnonymous|cdoBasic|cdoNTLM
-' You do not need to configure an id/pass combo with cdoAnonymous
+'set your SMTP server authentication type. Possible values:cdoAnonymous|cdoBasic|cdoNTLM
+'You do not need to configure an id/pass combo with cdoAnonymous
 strMail_smtpAuthType = "cdoAnonymous"
 strMail_smtpAuthID = ""
 strMail_smtpAuthPassword = ""
 
-'Version number of the Windows Update agent you wish to compare installed
-' version against.  If the version installed is not equal to this version, then
-' it will install the exe referred to in var 'wuaInstallerPath' above.
+'Version number of the Windows Update agent you wish to compare installed version against.  If the version installed is
+'not equal to this version, then it will install the exe referred to in var 'wuaInstallerPath' above.
+'   * version 2.0 SP1 is 5.8.0.2469
+'   * version 3.0     is 7.0.6000.374
 strWUAgentVersion = "7.0.6000.374"
-'version 2.0 SP1 is 5.8.0.2469
-'version 3.0 is 7.0.6000.374
 strLocaleVerDelim = "."
 
-'Turns email function on/off.  If an email address is specified in the
-' command-line arguments, then this will automatically turn on ('1').
+'Turns email function on/off.
 ' False = off, don't email
 ' True = on, email using default address defined in the var 'strMail_to' above.
 boolEmailReportEnabled = True
 
-'boolEmailIfAllOK Determines if email always sent or only if updates or reboot
-' needed.
+'boolEmailIfAllOK Determines if email always sent or only if updates or reboot needed.
 ' False = off, don't send email if no updates needed and no reboot needed
 ' True = on always send email
 boolEmailIfAllOK = False
 
-'boolFullDNSName Determines if the email subject contains the full dns name of
-' the server or just the computer name.
+'boolFullDNSName Determines if the email subject contains the full dns name of the server or just the computer name.
 ' False = off, just use computer name
 ' True = on,  use full dns name
 boolFullDNSName = False
@@ -129,10 +133,8 @@ boolAllowMSUpdateServer = False
 
 '*********************************************************************************************************************** Init
 '***********************************************************************************************************************
-
-'Try to pick up computername via AD'
+'Get ComputerName
 strComputer1 = objADInfo.ComputerName
-'Get computer OU
 On Error Resume Next
 strOU = "Computer OU: Not detected"
 Set objComputer = GetObject("LDAP://" & strComputer1)
@@ -174,9 +176,9 @@ lastTryedHotfix = ""
 'Init Windows Update's errorlist
 wuErrorlist = ""
 
+
 '*********************************************************************************************************************** Common functions
 '***********************************************************************************************************************
-
 Sub print(strMsg)
     aMsg = strMsg
     If (Right(aMsg, 2) = vbCrLf) Then aMsg = Left(strMsg, Len(strMsg) - 2)
@@ -359,9 +361,9 @@ Sub endOfScript()
     exitScript 0
 End Sub
 
+
 '*********************************************************************************************************************** Service functions
 '***********************************************************************************************************************
-
 Function serviceGetState(strService)
     strObjID = "serviceGetState"
     Dim colServiceList, objService, ret
@@ -414,7 +416,8 @@ Function serviceStart(strService)
                 ret = False
             End If
         Else
-            print_debug strObjID, "Starting service error: " & strService & " (" & objService.DisplayName & "); return: " & errReturn
+            print_debug strObjID, "Starting service error: " & strService & " (" & objService.DisplayName & "); " & _
+                "return: " & errReturn
         End If
     Next
 
@@ -456,16 +459,17 @@ Function serviceStop(strService)
                 ret = False
             End If
         Else
-            print_debug strObjID, "Stoping service error: " & strService & " (" & objService.DisplayName & "); return: " & errReturn
+            print_debug strObjID, "Stoping service error: " & strService & " (" & objService.DisplayName & "); " & _
+                "return: " & errReturn
         End If
     Next
 
     serviceStop = ret
 End Function
 
+
 '*********************************************************************************************************************** FS functions
 '***********************************************************************************************************************
-
 Function delSubItems(strPath)
     strObjID = "delSubItems"
     Dim ret, objFolder, objItem
@@ -525,9 +529,9 @@ Function getFileToText(fn)
     getFileToText = ret
 End Function
 
+
 '*********************************************************************************************************************** Run functions
 '***********************************************************************************************************************
-
 Function runCommand(strCmd)
     strObjID = "runCommand"
     dim ret
@@ -541,9 +545,9 @@ Function runCommand(strCmd)
     runCommand = ret
 End Function
 
+
 '*********************************************************************************************************************** WUA functions
 '***********************************************************************************************************************
-
 Sub chkMailSets()
     strObjID = "chkMailSets"
     If boolEmailReportEnabled = False Then Exit Sub
@@ -554,12 +558,13 @@ Sub chkMailSets()
         Else
             print_debug strObjID, "SMTP Auth User ID: " & sAuthID
             If SMTPUserID = "" Then
-                print_debug strObjID, "No SMTP user ID was specified, even though SMTP Authentication was configured " & _
-                    "for " & strMail_smtpAuthType & "." & vbCrLf & "Attempting to switch to anonymous authentication..."
+                print_debug strObjID, "No SMTP user ID was specified, even though SMTP Authentication was " & _
+                    "configured for " & strMail_smtpAuthType & "." & vbCrLf & "Attempting to switch to anonymous " & _
+                    "authentication..."
                 strMail_smtpAuthType = "cdoAnonymous"
                 If strMail_smtpAuthPassword <> "" Then
-                    print_debug strObjID, "You have specified a SMTP password, but no user ID has been configured for " & _
-                        "authentication. Check the INI file (" & sINI & ") again and re-run the script."
+                    print_debug strObjID, "You have specified a SMTP password, but no user ID has been configured " & _
+                    "for authentication. Check the INI file (" & sINI & ") again and re-run the script."
                 End If
             Else
                 If strMail_smtpAuthPassword = "" Then
@@ -825,14 +830,17 @@ Function errorHotfixes(errNum)'boolean :: true if we have hotfix for it
             ret = ret Or serviceStop("wuauserv")
             ret = ret Or delSubItems("C:\WINDOWS\SoftwareDistribution\DataStore")
             ret = ret Or delSubItems("C:\Windows\SoftwareDistribution\Download")
-            ret = ret Or runCommand("reg delete ""HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate"" /v SusClientId /f")
-            ret = ret Or runCommand("reg delete ""HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate"" /v SusClientIdValidation /f")
+            ret = ret Or runCommand("reg delete ""HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\" & _
+                "WindowsUpdate"" /v SusClientId /f")
+            ret = ret Or runCommand("reg delete ""HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\" & _
+                "WindowsUpdate"" /v SusClientIdValidation /f")
             ret = ret Or serviceStart("wuauserv")
 
         Case "0x8024A000"
             ret = True
             ret = ret Or serviceStop("wuauserv")
-            ret = ret Or runCommand("reg add ""HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update"" /v AUOptions /t REG_DWORD /d 2 /f") 'Set: Auto check, never donload
+            ret = ret Or runCommand("reg add ""HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\" & _
+                "WindowsUpdate\Auto Update"" /v AUOptions /t REG_DWORD /d 2 /f") 'Set: Auto check, never donload
             ret = ret Or serviceStart("wuauserv")
 
         Case "0x80072F8F"
@@ -972,11 +980,21 @@ Function instUpdates()
     strUpdates = ""
     For i = 0 To updatesToInstall.Count - 1
         Select Case installationResult.GetUpdateResult(i).ResultCode
-            Case 1: strResult = "In progress                        ": statInProgress = statInProgress + 1
-            Case 2: strResult = "Installed                          ": statInstalled = statInstalled + 1
-            Case 3: strResult = "Operation complete, but with errors": statCompleteWithErrors = statCompleteWithErrors + 1
-            Case 4: strResult = "Operation failed                   ": statFailed = statFailed + 1
-            Case 5: strResult = "Operation aborted                  ": statAborted = statAborted + 1
+            Case 1
+                strResult = "In progress                    "
+                statInProgress = statInProgress + 1
+            Case 2
+                strResult = "Installed                      "
+                statInstalled = statInstalled + 1
+            Case 3
+                strResult = "Operation complete, with errors"
+                statCompleteWithErrors = statCompleteWithErrors + 1
+            Case 4
+                strResult = "Operation failed               "
+                statFailed = statFailed + 1
+            Case 5
+                strResult = "Operation aborted              "
+                statAborted = statAborted + 1
         End Select
         strUpdates = strUpdates & strResult & " : " & updatesToInstall.Item(i).Title & vbCrLf
     Next
@@ -1043,12 +1061,13 @@ Sub getUpdateLog()
     intLinesNow = getLineNumber(strLog)
 
     'Filter to last update
-    print_debug strObjID, ">>> Windows Update logfile <<<" & vbCrLf & getLineRange(strLog, intLinesBefore, intLinesNow-1)
+    print_debug strObjID, ">>> Windows Update logfile <<<" & vbCrLf & _
+        getLineRange(strLog, intLinesBefore, intLinesNow - 1)
 End Sub
+
 
 '*********************************************************************************************************************** WUA main
 '***********************************************************************************************************************
-
 'Init script
 chkMailSets
 
