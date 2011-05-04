@@ -627,14 +627,13 @@ End Function
 '***********************************************************************************************************************
 Function chkAgentSets()
     strObjID = "chkAgentSets"
-    strKeyPath = "SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate"
-
     Set autoUpdateClient = CreateObject("Microsoft.Update.AutoUpdate")
 
     'Server
+    strKeyPath = "SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate"
     strValueName = "WUServer"
     objReg.GetStringValue HKEY_LOCAL_MACHINE, strKeyPath, strValueName, regWSUSServer
-    If IsNull(regWSUSServer) Or Trim(regWSUSServer) = "" Then regWSUSServer = "Microsoft Windows Update"
+    If IsNull(regWSUSServer) Or Trim(regWSUSServer) = "" Then regWSUSServer = "MS Update Server via Internet"
 
     'Scheduled
     retScheduled = chkAgentSet_getSchedule
@@ -670,7 +669,7 @@ Function chkAgentSet_getSchedule()
         Case 5:     strDay = "thursday"
         Case 6:     strDay = "friday"
         Case 7:     strDay = "saturday"
-        Case Else:  strDay = "The scheduled installation day is could not be determined."
+        Case Else:  strDay = "n/a"
     End Select
 
     If Len(objSettings.ScheduledInstallationTime) = 1 Then
