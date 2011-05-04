@@ -13,7 +13,7 @@
 
 '***********************************************************************************************************************' Declare
 '***********************************************************************************************************************
-Const scriptVersion = "1.0.4"
+Const scriptVersion = "1.0.5"
 
 Const HKEY_CURRENT_USER = &H80000001
 Const HKEY_LOCAL_MACHINE = &H80000002
@@ -120,6 +120,12 @@ boolFullDNSName = False
 ' 3 = vbLongTime - Returns time: hh:mm:ss PM/AM
 ' 4 = vbShortTime - Return time: hh:mm
 iTimeFormat = 4
+
+'Allow MS Update Server via Internet
+' False = abort script, when the Agent try to use MS Update Server
+' True = allow MS Update Server as sources of updates
+boolAllowMSUpdateServer = False
+
 
 '*********************************************************************************************************************** Init
 '***********************************************************************************************************************
@@ -627,13 +633,17 @@ End Function
 '***********************************************************************************************************************
 Function chkAgentSets()
     strObjID = "chkAgentSets"
+    willUseMSUpdateServer = False
     Set autoUpdateClient = CreateObject("Microsoft.Update.AutoUpdate")
 
     'Server
     strKeyPath = "SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate"
     strValueName = "WUServer"
     objReg.GetStringValue HKEY_LOCAL_MACHINE, strKeyPath, strValueName, regWSUSServer
-    If IsNull(regWSUSServer) Or Trim(regWSUSServer) = "" Then regWSUSServer = "MS Update Server via Internet"
+    If IsNull(regWSUSServer) Or Trim(regWSUSServer) = "" Then
+        regWSUSServer = "MS Update Server via Internet"
+        willUseMSUpdateServer = True
+    End If
 
     'Scheduled
     retScheduled = chkAgentSet_getSchedule
@@ -651,8 +661,13 @@ Function chkAgentSets()
         "Scheduled: " & retScheduled & vbCrLf & _
         "TargetGroup: " & retTargetGroup
 
-    'All OK
-    chkAgentSets = True
+    If Not boolAllowMSUpdateServer And willUseMSUpdateServer Then
+        en = -600: ed = "Use the MS Update Server is denied"
+        commonErrorHandler strObjID, en, ed, True
+        chkAgentSets = False
+    Else
+        chkAgentSets = True
+    End If
 End Function
 
 '***********************************************************************************************************************
