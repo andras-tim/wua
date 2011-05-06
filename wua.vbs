@@ -13,7 +13,7 @@
 
 '***********************************************************************************************************************' Declare
 '***********************************************************************************************************************
-Const scriptVersion = "1.0.5"
+Const scriptVersion = "1.0.6"
 
 Const HKEY_CURRENT_USER = &H80000001
 Const HKEY_LOCAL_MACHINE = &H80000002
@@ -73,8 +73,7 @@ wuLogPath = wshsysenv("WINDIR") & "\WindowsUpdate.log"
 wuErrorlistPath = "wua-errorlist.csv"
 
 'Logfile path
-'logfilePath = wshsysenv("SYSTEMDRIVE") & "\" & "wua-last.log"
-logfilePath = "wua-last.log"
+logfilePath = wshsysenv("SYSTEMDRIVE") & "\" & "wua-last.log"
 
 'Mail settings
 strMailFrom = LCase(strComputer)
