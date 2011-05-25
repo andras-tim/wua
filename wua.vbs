@@ -1,3 +1,5 @@
+Option Explicit
+
 'Windows Update Agent Script
 'Created by Andras TIM @ 2010
 'It based on http://community.spiceworks.com/scripts/show_download/82 from Rob Dunn
@@ -13,13 +15,14 @@
 
 '***********************************************************************************************************************' Declare Globals
 '***********************************************************************************************************************
-Const scriptVersion = "1.0.6"
+Const scriptVersion = "1.0.110525"
 
 Const HKEY_CURRENT_USER = &H80000001
 Const HKEY_LOCAL_MACHINE = &H80000002
 Const ForReading = 1
 Const ForWriting = 2
 Const ForAppending = 8
+Const TristateUseDefault = -2
 Const cdoAnonymous = 0 'Do not authenticate
 Const cdoBasic = 1 'basic (clear-text) authentication
 Const cdoNTLM = 2 'NTLM
@@ -30,124 +33,115 @@ Const cdoSMTPServerport = "http://schemas.microsoft.com/cdo/configuration/smtpse
 Const cdoSMTPconnectiontimeout = "http://schemas.microsoft.com/cdo/configuration/Connectiontimeout"
 
 'Public Objects
-Dim wshshell, wshsysenv, fso, objADInfo, updateAgentSession, autoUpdateClient, searchResult, logFile, objWMIService, _
-    objReg
-
-'Settings
-Dim update_criteria, wuaInstallerPath, wuLogPath, wuErrorlistPath, logfilePath, strWUAgentVersion, strLocaleVerDelim, _
-    boolEmailReportEnabled, boolEmailIfAllOK, boolFullDNSName, iTimeFormat
-Dim strMailFrom, strMail_to, strMail_subject, strMail_smtpHost, strMail_smtpPort, strMail_smtpAuthType, _
-    strMail_smtpAuthID, strMail_smtpAuthPassword
+Dim updateAgentSession, autoUpdateClient, searchResult
 
 'State variables
-Dim boolCScript, regWSUSServer, boolUpdatesInstalled, boolRebootRequired
-Dim statInProgress, statInstalled, statCompleteWithErrors, statFailed, statAborted, intLinesBefore
-Dim lastTryedHotfix, wuErrorlist
+Dim boolUpdatesInstalled, boolRebootRequired, intLinesBefore
 
 
 '*********************************************************************************************************************** PreInit
 '***********************************************************************************************************************
 'Get instances
-Set wshshell = wscript.CreateObject("WScript.Shell")
-Set wshsysenv = wshshell.Environment("PROCESS")
-Set fso = CreateObject("Scripting.FileSystemObject")
-Set objADInfo = CreateObject("ADSystemInfo")
+Dim wshshell: Set wshshell = wscript.CreateObject("WScript.Shell")
+Dim wshsysenv: Set wshsysenv = wshshell.Environment("PROCESS")
+Dim fso: Set fso = CreateObject("Scripting.FileSystemObject")
+Dim objADInfo: Set objADInfo = CreateObject("ADSystemInfo")
 
 'Get authentication information
-strDomain = wshsysenv("userdomain")
-strUser = wshsysenv("username")
-strComputer = wshshell.ExpandEnvironmentStrings("%Computername%")
+Dim strDomain: strDomain = wshsysenv("userdomain")
+Dim strUser: strUser = wshsysenv("username")
+Dim strComputer: strComputer = wshshell.ExpandEnvironmentStrings("%Computername%")
 
 'Get other instances
-Set objWMIService = GetObject("winmgmts:{impersonationLevel=impersonate}!\\" & strComputer & "\root\cimv2")
-Set objReg = GetObject("winmgmts:{impersonationLevel=impersonate}!\\" & strComputer & "\root\default:StdRegProv")
+Dim objWMIService: Set objWMIService = GetObject("winmgmts:{impersonationLevel=impersonate}!\\" & strComputer & "\root\cimv2")
+Dim objReg: Set objReg = GetObject("winmgmts:{impersonationLevel=impersonate}!\\" & strComputer & "\root\default:StdRegProv")
 
 
 '*********************************************************************************************************************** User variables
 '***********************************************************************************************************************
 'Updates filter for updating
-'update_criteria = "IsAssigned=1 and IsHidden=0 and IsInstalled=0 and Type='Software' or Type='Driver'"
-update_criteria = "IsInstalled=0 and DeploymentAction='Installation' or " & _
+'Dim update_criteria: update_criteria = "IsAssigned=1 and IsHidden=0 and IsInstalled=0 and Type='Software' or Type='Driver'"
+Dim update_criteria: update_criteria = "IsInstalled=0 and DeploymentAction='Installation' or " & _
     "IsPresent=1 and DeploymentAction='Uninstallation' or " & _
     "IsInstalled=1 and DeploymentAction='Installation' and RebootRequired=1 or " & _
     "IsInstalled=0 and DeploymentAction='Uninstallation' and RebootRequired=1"
 
 'Full EXE path to Windows Update Agent installation exe. It will install it slently if the PC needs it
-wuaInstallerPath = """\\FIXME.SERVER\SHARE\WindowsUpdate\WindowsUpdateAgent30-x86.exe"""
+Dim wuaInstallerPath: wuaInstallerPath = """\\FIXME.SERVER\SHARE\WindowsUpdate\WindowsUpdateAgent30-x86.exe"""
 
 'Windows Update log file path
-wuLogPath = wshsysenv("WINDIR") & "\WindowsUpdate.log"
+Dim wuLogPath: wuLogPath = wshsysenv("WINDIR") & "\WindowsUpdate.log"
 
 'Windows Update's error description file
-wuErrorlistPath = "wua-errorlist.csv"
+Dim wuErrorlistPath: wuErrorlistPath = "wua-errorlist.csv"
 
 'Logfile path
-logfilePath = wshsysenv("SYSTEMDRIVE") & "\" & "wua-last.log"
+Dim logfilePath: logfilePath = wshsysenv("SYSTEMDRIVE") & "\" & "wua-last.log"
 
 'Mail settings
-strMailFrom = LCase(strComputer)
-strMail_to = "FIXME@EMAIL"
-strMail_subject = "WUA Script - WSUS Update log file from" 'computer name
-strMail_smtpHost = "FIXME.SMTP.SERVER"
-strMail_smtpPort = 25
+Dim strMail_from: strMail_from = LCase(strComputer)
+Dim strMail_to: strMail_to = "FIXME@EMAIL"
+Dim strMail_subject: strMail_subject = "WUA Script - WSUS Update log file from" 'computer name
+Dim strMail_smtpHost: strMail_smtpHost = "FIXME.SMTP.SERVER"
+Dim strMail_smtpPort: strMail_smtpPort = 25
 'set your SMTP server authentication type. Possible values:cdoAnonymous|cdoBasic|cdoNTLM
 'You do not need to configure an id/pass combo with cdoAnonymous
-strMail_smtpAuthType = "cdoAnonymous"
-strMail_smtpAuthID = ""
-strMail_smtpAuthPassword = ""
+Dim strMail_smtpAuthType: strMail_smtpAuthType = "cdoAnonymous"
+Dim strMail_smtpAuthID: strMail_smtpAuthID = ""
+Dim strMail_smtpAuthPassword: strMail_smtpAuthPassword = ""
 
 'Version number of the Windows Update agent you wish to compare installed version against.  If the version installed is
 'not equal to this version, then it will install the exe referred to in var 'wuaInstallerPath' above.
 '   * version 2.0 SP1 is 5.8.0.2469
 '   * version 3.0     is 7.0.6000.374
-strWUAgentVersion = "7.0.6000.374"
-strLocaleVerDelim = "."
+Dim strWUAgentVersion: strWUAgentVersion = "7.0.6000.374"
+Dim strLocaleVerDelim: strLocaleVerDelim = "."
 
 'Turns email function on/off.
 ' False = off, don't email
-' True = on, email using default address defined in the var 'strMail_to' above.
-boolEmailReportEnabled = True
+' True = on, email using default address defined in the var reporting.settings.Item("mailTo") above.
+Dim boolEmailReportEnabled: boolEmailReportEnabled = True
 
 'boolEmailIfAllOK Determines if email always sent or only if updates or reboot needed.
 ' False = off, don't send email if no updates needed and no reboot needed
 ' True = on always send email
-boolEmailIfAllOK = False
+Dim boolEmailIfAllOK: boolEmailIfAllOK = False
 
 'boolFullDNSName Determines if the email subject contains the full dns name of the server or just the computer name.
 ' False = off, just use computer name
 ' True = on,  use full dns name
-boolFullDNSName = False
+Dim boolFullDNSName: boolFullDNSName = False
 
 'Timestamp format in log
 ' 0 = vbGeneralDate - Default. Returns time: hh:mm:ss PM/AM.
 ' 3 = vbLongTime - Returns time: hh:mm:ss PM/AM
 ' 4 = vbShortTime - Return time: hh:mm
-iTimeFormat = 4
+Dim iTimeFormat: iTimeFormat = 4
 
 'Allow MS Update Server via Internet
 ' False = abort script, when the Agent try to use MS Update Server
 ' True = allow MS Update Server as sources of updates
-boolAllowMSUpdateServer = False
+Dim boolAllowMSUpdateServer: boolAllowMSUpdateServer = False
 
 
 '*********************************************************************************************************************** Init
 '***********************************************************************************************************************
 'Get ComputerName
-strComputer1 = objADInfo.ComputerName
+Dim strComputer1: strComputer1 = objADInfo.ComputerName
 On Error Resume Next
-strOU = "Computer OU: Not detected"
-Set objComputer = GetObject("LDAP://" & strComputer1)
+Dim strOU: strOU = "Computer OU: Not detected"
+Dim objComputer: Set objComputer = GetObject("LDAP://" & strComputer1)
 If objComputer.Parent <> "" Then strOU = "Computer OU: " & Replace(objComputer.Parent, "LDAP://", "")
 On Error GoTo 0
 
 'Open logfile
-Set logFile = fso.OpenTextFile(logfilePath, ForAppending, True)
+Dim logFile: Set logFile = fso.OpenTextFile(logfilePath, ForAppending, True)
 
 'Print header (version info)
 print_debug "ScriptInit", "Windows Update Agent Script v" & scriptVersion
 
 'Check the start environment
-boolCScript = (InStr(UCase(wscript.FullName), "\CSCRIPT.EXE") > 0)
+Dim boolCScript: boolCScript = (InStr(UCase(wscript.FullName), "\CSCRIPT.EXE") > 0)
 If Not boolCScript Then
     print_debug "ScriptInit", "WARNING: Use the ""cscript.exe //nologo"" command console output"
 End If
@@ -160,26 +154,26 @@ print_debug "ScriptInit", ">>> Environment info <<<" & vbCrLf & _
     "Executed by: " & strDomain & "\" & strUser
 
 'Reset counters
-statInProgress = 0
-statInstalled = 0
-statCompleteWithErrors = 0
-statFailed = 0
-statAborted = 0
+Dim statInProgress: statInProgress = 0
+Dim statInstalled: statInstalled = 0
+Dim statCompleteWithErrors: statCompleteWithErrors = 0
+Dim statFailed: statFailed = 0
+DIm statAborted: statAborted = 0
 
 'Store start time
 print_debug "ScriptMain", "Script started"
 
 'Init the applyed hotfix list
-lastTryedHotfix = ""
+Dim lastTryedHotfix: lastTryedHotfix = ""
 
 'Init Windows Update's errorlist
-wuErrorlist = ""
+Dim wuErrorlist: wuErrorlist = ""
 
 
 '*********************************************************************************************************************** Common functions
 '***********************************************************************************************************************
 Sub print(strMsg)
-    aMsg = strMsg
+    Dim aMsg: aMsg = strMsg
     If (Right(aMsg, 2) = vbCrLf) Then aMsg = Left(strMsg, Len(strMsg) - 2)
     print_debug "STDOUT", aMsg
     If boolCScript Then
@@ -191,8 +185,8 @@ End Sub
 
 '***********************************************************************************************************************
 Sub print_debug(strObj, strMsg)
-    aMsg = strMsg
-    aTime = FormatDateTime(Time, iTimeFormat)
+    Dim aMsg: aMsg = strMsg
+    Dim aTime: aTime = FormatDateTime(Time, iTimeFormat)
     If (Right(aMsg, 2) = vbCrLf) Then aMsg = Left(strMsg, Len(strMsg) - 2)
     aMsg = Replace(aMsg, vbCrLf, vbCrLf & vbTab & vbTab)
     logFile.writeline "[" & aTime & "] " & strObj & vbTab & aMsg
@@ -200,12 +194,12 @@ End Sub
 
 '***********************************************************************************************************************
 Function getLineNumber(strText)
-    strObjID = "getLineNumber"
-    ret = 0
+    Dim strObjID: strObjID = "getLineNumber"
+    Dim ret: ret = 0
 
     If strText <> "" Then
         'Append a line end > the UBound-1 equal with the lines
-        arrText = Split(Replace(strText & vbLf, vbCrLf, vbLf), vbLf)
+        Dim arrText: arrText = Split(Replace(strText & vbLf, vbCrLf, vbLf), vbLf)
         ret = UBound(arrText)
     End If
 
@@ -214,14 +208,14 @@ End Function
 
 '***********************************************************************************************************************
 Function getLineRange(strText,intStart,intEnd)
-    strObjID = "getLineRange"
-    ret = ""
+    Dim strObjID: strObjID = "getLineRange"
+    Dim ret: ret = ""
 
     If strText <> "" Then
         'Append a line end > the UBound-1 equal with the lines
-        arrText = Split(Replace(strText & vbLf, vbCrLf, vbLf), vbLf)
+        Dim arrText: arrText = Split(Replace(strText & vbLf, vbCrLf, vbLf), vbLf)
 
-        i = intStart
+        Dim i: i = intStart
         Do Until i < LBound(arrText) Or i > UBound(arrText) Or i > IntEnd
             ret = ret & arrText(i) & vbCrLf
             i = i +1
@@ -233,14 +227,13 @@ End Function
 
 '***********************************************************************************************************************
 Function findLine(strText,strFind)
-    strObjID = "findLine"
-    ret = ""
+    Dim strObjID: strObjID = "findLine"
+    Dim ret: ret = ""
 
-    i = InStr(1, strText, strFind)
+    Dim i: i = InStr(1, strText, strFind)
     If i > 0 Then
-        j = InStr(i + 1, strText, vbCrLf, vbTextCompare)
+        Dim j: j = InStr(i + 1, strText, vbCrLf, vbTextCompare)
         If j < i Then j = Len(strText) + 1
-
         ret = Mid(strText, i, j - i)
     End If
 
@@ -261,13 +254,13 @@ Sub exitScript(intErrCode)
 End Sub
 
 '***********************************************************************************************************************
-Function sendMail(strFrom, strTo, strMail_subject, strMessage)
-    strObjID = "sendMail"
+Function sendMail(strFrom, strTo, strMail_subject)
+    Dim strObjID: strObjID = "sendMail"
     Dim iMsg, Flds
 
     print_debug strObjID, ">>> Calling sendMail routine <<<" & vbCrLf & _
         "To: " & strMail_to & vbCrLf & _
-        "From: " & strMailFrom & vbCrLf & _
+        "From: " & strMail_from & vbCrLf & _
         "Subject: " & strMail_subject & vbCrLf & _
         "SMTP Server: " & strMail_smtpHost
 
@@ -306,14 +299,13 @@ Function sendMail(strFrom, strTo, strMail_subject, strMessage)
         .Update
     End With
 
-    Dim r
-    Set r = fso.OpenTextFile(logfilePath, ForReading, False, TristateUseDefault)
-    strMessage = "<pre>" & r.readall & "</pre>"
+    Dim r: Set r = fso.OpenTextFile(logfilePath, ForReading, False, TristateUseDefault)
+    Dim strMessage: strMessage = "<pre>" & r.readall & "</pre>"
 
     '//  Set the message properties.
     With iMsg
         .To = strMail_to
-        .From = strMailFrom
+        .From = strMail_from
         .Subject = strMail_subject
     End With
 
@@ -340,6 +332,7 @@ End Function
 
 '***********************************************************************************************************************
 Sub endOfScript()
+    Dim intRebootReq
     If boolRebootRequired Then
         intRebootReq = 1
     Else
@@ -364,7 +357,7 @@ End Sub
 '*********************************************************************************************************************** Service functions
 '***********************************************************************************************************************
 Function serviceGetState(strService)
-    strObjID = "serviceGetState"
+    Dim strObjID: strObjID = "serviceGetState"
     Dim colServiceList, objService, ret
     On Error Goto 0
 
@@ -382,7 +375,7 @@ End Function
 
 '***********************************************************************************************************************
 Function serviceStart(strService)
-    strObjID = "serviceStart"
+    Dim strObjID: strObjID = "serviceStart"
     Dim colServiceList, objService, intTimeout, strState, ret
     On Error Goto 0
 
@@ -398,6 +391,7 @@ Function serviceStart(strService)
     ret = True
     intTimeout=30'sec
     'Get Service
+    Dim errReturn
     For Each objService In colServiceList
         print_debug strObjID, "Starting service: " & strService & " (" & objService.DisplayName & ")"
         'Start service
@@ -425,7 +419,7 @@ End Function
 
 '***********************************************************************************************************************
 Function serviceStop(strService)
-    strObjID = strObjID & "serviceStop"
+    Dim strObjID: strObjID = strObjID & "serviceStop"
     Dim colServiceList, objService, intTimeout, strState, ret
     On Error Goto 0
 
@@ -470,9 +464,9 @@ End Function
 '*********************************************************************************************************************** FS functions
 '***********************************************************************************************************************
 Function delSubItems(strPath)
-    strObjID = "delSubItems"
-    Dim ret, objFolder, objItem
-    ret = False
+    Dim strObjID: strObjID = "delSubItems"
+    Dim objFolder, objItem
+    Dim ret: ret = False
 
     'Get object
     print_debug strObjID, "Delete contents in: " & strPath
@@ -507,12 +501,13 @@ End Function
 
 '***********************************************************************************************************************
 Function getFileToText(fn)
-    strObjID = "getFileToText"
-    ret = ""
+    Dim strObjID: strObjID = "getFileToText"
+    Dim en, ed
+    Dim ret: ret = ""
 
     'Open file, read and close
     On Error Resume Next
-    Set objReadFile = fso.OpenTextFile(fn, ForReading)
+    Dim objReadFile: Set objReadFile = fso.OpenTextFile(fn, ForReading)
     ret = objReadFile.ReadAll
     objReadFile.Close
 
@@ -532,7 +527,7 @@ End Function
 '*********************************************************************************************************************** Run functions
 '***********************************************************************************************************************
 Function runCommand(strCmd)
-    strObjID = "runCommand"
+    Dim strObjID: strObjID = "runCommand"
     dim ret
 
     'Run command
@@ -548,7 +543,7 @@ End Function
 '*********************************************************************************************************************** WUA functions
 '***********************************************************************************************************************
 Sub chkMailSets()
-    strObjID = "chkMailSets"
+    Dim strObjID: strObjID = "chkMailSets"
     If boolEmailReportEnabled = False Then Exit Sub
 
     If LCase(strMail_smtpAuthType) <> "cdoanonymous" Then
@@ -580,7 +575,8 @@ End Sub
 
 '***********************************************************************************************************************
 Function chkAgentVer()
-    strObjID = "chkAgentVer"
+    Dim strObjID: strObjID = "chkAgentVer"
+    Dim en, ed
 
     'Check Service State
     If Not serviceStart("wuauserv") Then
@@ -589,7 +585,7 @@ Function chkAgentVer()
     End If
 
     On Error Resume Next
-    bUpdateNeeded = True ' init value
+    Dim bUpdateNeeded: bUpdateNeeded = True ' init value
     print_debug strObjID, "Checking version of Windows Update agent against version " & strWUAgentVersion & "..."
     Set updateAgentSession = CreateObject("Microsoft.Update.AgentInfo")
     If Err.Number = 0 Then
@@ -636,27 +632,25 @@ End Function
 
 '***********************************************************************************************************************
 Function chkAgentSets()
-    strObjID = "chkAgentSets"
-    willUseMSUpdateServer = False
+    Dim strObjID: strObjID = "chkAgentSets"
+    Dim en, ed
+    Dim willUseMSUpdateServer: willUseMSUpdateServer = False
     Set autoUpdateClient = CreateObject("Microsoft.Update.AutoUpdate")
 
     'Server
-    strKeyPath = "SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate"
-    strValueName = "WUServer"
+    Dim strKeyPath: strKeyPath = "SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate"
+    Dim strValueName: strValueName = "WUServer"
+    Dim regWSUSServer
     objReg.GetStringValue HKEY_LOCAL_MACHINE, strKeyPath, strValueName, regWSUSServer
     If IsNull(regWSUSServer) Or Trim(regWSUSServer) = "" Then
         regWSUSServer = "MS Update Server via Internet"
         willUseMSUpdateServer = True
     End If
 
-    'Scheduled
-    retScheduled = chkAgentSet_getSchedule
-
-    'TargetGroup
-    retTargetGroup = chkAgentSet_getTargetGroup(strKeyPath)
-
-    'NotificationLevel
-    retWUAmode = chkAgentSet_getretWUAmode
+    'Get settings
+    Dim retScheduled: retScheduled = chkAgentSet_getSchedule
+    Dim retTargetGroup: retTargetGroup = chkAgentSet_getTargetGroup(strKeyPath)
+    Dim retWUAmode: retWUAmode = chkAgentSet_getretWUAmode
 
     'Debug print
     print_debug strObjID, ">>> WUA Settings <<<" & vbCrLf & _
@@ -676,9 +670,10 @@ End Function
 
 '***********************************************************************************************************************
 Function chkAgentSet_getSchedule()
-    Set objAutoUpdate = CreateObject("Microsoft.Update.AutoUpdate")
-    Set objSettings = objAutoUpdate.Settings
+    Dim objAutoUpdate: Set objAutoUpdate = CreateObject("Microsoft.Update.AutoUpdate")
+    Dim objSettings: Set objSettings = objAutoUpdate.Settings
 
+    Dim strDay: strDay = "n/a"
     Select Case objSettings.ScheduledInstallationDay
         Case 0:     strDay = "every day"
         Case 1:     strDay = "sunday"
@@ -688,21 +683,24 @@ Function chkAgentSet_getSchedule()
         Case 5:     strDay = "thursday"
         Case 6:     strDay = "friday"
         Case 7:     strDay = "saturday"
-        Case Else:  strDay = "n/a"
     End Select
 
+    Dim strScheduledTime
     If Len(objSettings.ScheduledInstallationTime) = 1 Then
         strScheduledTime  = "0" & objSettings.ScheduledInstallationTime
     Else
         strScheduledTime  = objSettings.ScheduledInstallationTime
     End If
+
     chkAgentSet_getSchedule = strDay & " at " & strScheduledTime & ":00"
 End Function
 
 '***********************************************************************************************************************
 Function chkAgentSet_getTargetGroup(strKeyPath)
-    strValueName = "TargetGroup"
-    ret = "Not specified"
+    Dim regTargetGroup
+    Dim strValueName: strValueName = "TargetGroup"
+    Dim ret: ret = "Not specified"
+
     objReg.GetStringValue HKEY_LOCAL_MACHINE, strKeyPath, strValueName, regTargetGroup
     If regTargetGroup <> "" And Not IsNull(regTargetGroup) Then ret = regTargetGroup
     chkAgentSet_getTargetGroup = ret
@@ -710,9 +708,9 @@ End Function
 
 '***********************************************************************************************************************
 Function chkAgentSet_getretWUAmode()
-    Set updateinfo = autoUpdateClient.Settings
+    Dim updateinfo: Set updateinfo = autoUpdateClient.Settings
 
-    ret = "-"
+    Dim ret: ret = "-"
     Select Case updateinfo.notificationlevel
         Case 0: ret = "WU agent is not configured."
         Case 1: ret = "WU agent is DISABLED."
@@ -725,7 +723,8 @@ End Function
 
 '***********************************************************************************************************************
 Function updateSearcher()
-    strObjID = "updateSearcher"
+    Dim strObjID: strObjID = "updateSearcher"
+    Dim en, ed
 
     On Error Resume Next
     Set updateAgentSession = CreateObject("Microsoft.Update.Session")
@@ -751,8 +750,8 @@ End Function
 
 '***********************************************************************************************************************
 Function wuaGetErrorDescription(errNum)' Array :: [""] if we don't know description; ["ID", "Desc"] if we know the error
-    hexErrNum = "0x" & UCase(Hex(errNum))
-    ret = Null
+    Dim hexErrNum: hexErrNum = "0x" & UCase(Hex(errNum))
+    Dim ret: ret = Null
 
     'Init errorlist
     If wuErrorlist = "" Then
@@ -774,7 +773,7 @@ End Function
 
 '***********************************************************************************************************************
 Function wuaErrorHandler(strObjID, errNum, errDesc, ifUnhandledBeFatal)' Boolean :: true=all ok; false=check
-    strObjID = "wuaErrorHandler"
+    Dim en, ed
 
     'Check fatal
     Select Case "0x" & UCase(Hex(errNum))
@@ -814,8 +813,8 @@ End Function
 
 '***********************************************************************************************************************
 Function errorHotfixes(errNum)'boolean :: true if we have hotfix for it
-    strObjID = "errorHotfixes"
-    hexErrNum = "0x" & UCase(Hex(errNum))
+    Dim strObjID: strObjID = "errorHotfixes"
+    Dim hexErrNum: hexErrNum = "0x" & UCase(Hex(errNum))
 
     'Check the last applyed hotfix ID (for recursive hotfixapply check)
     If lastTryedHotfix = hexErrNum Then
@@ -823,9 +822,9 @@ Function errorHotfixes(errNum)'boolean :: true if we have hotfix for it
         Exit Function
     End If
 
+    Dim ret: ret = True
     Select Case hexErrNum
         Case "0x8024400D"
-            ret = True
             ret = ret Or serviceStop("wuauserv")
             ret = ret Or delSubItems("C:\WINDOWS\SoftwareDistribution\DataStore")
             ret = ret Or delSubItems("C:\Windows\SoftwareDistribution\Download")
@@ -836,14 +835,12 @@ Function errorHotfixes(errNum)'boolean :: true if we have hotfix for it
             ret = ret Or serviceStart("wuauserv")
 
         Case "0x8024A000"
-            ret = True
             ret = ret Or serviceStop("wuauserv")
             ret = ret Or runCommand("reg add ""HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\" & _
                 "WindowsUpdate\Auto Update"" /v AUOptions /t REG_DWORD /d 2 /f") 'Set: Auto check, never donload
             ret = ret Or serviceStart("wuauserv")
 
         Case "0x80072F8F"
-            ret = True
             ret = ret Or runCommand("regsvr32 /s Mssip32.dll")
             ret = ret Or runCommand("regsvr32 /s Initpki.dll")
 
@@ -859,13 +856,19 @@ End Function
 
 '***********************************************************************************************************************
 Sub chkReboot(beforeorafter)
-    strObjID = "chkReboot"
-    Set ComputerStatus = CreateObject("Microsoft.Update.SystemInfo")
+    Dim strObjID: strObjID = "chkReboot"
+    Dim ComputerStatus: Set ComputerStatus = CreateObject("Microsoft.Update.SystemInfo")
+
+    Dim strCheck
     Select Case beforeorafter
-        Case "beginning": strCheck = "Pre-check"
-        Case "end":       strCheck = "Post-check"
+        Case "beginning":   strCheck = "Pre-check"
+        Case "end":         strCheck = "Post-check"
+        Case Else
+            en = 0: ed = "Bad chkReboot parameter: """ & beforeorafter & """"
+            commonErrorHandler strObjID, en, ed, True
     End Select
 
+    Dim strMsg
     boolRebootRequired = ComputerStatus.RebootRequired
     If boolRebootRequired Then
         strMsg = "Computer has a pending reboot (" & strCheck & ")"
@@ -878,7 +881,8 @@ End Sub
 
 '***********************************************************************************************************************
 Function detectNow()
-    strObjID = "DetectNow"
+    Dim strObjID: strObjID = "DetectNow"
+    Dim en, ed
 
     'SEARCHING UPDATES
     print_debug strObjID, "Searching updates..."
@@ -897,9 +901,9 @@ Function detectNow()
     On Error GoTo 0
 
     'LIST NEW UPDATES
-    strUpdates = ""
-    For i = 0 To searchResult.updates.Count - 1
-        Set Update = searchResult.updates.Item(i)
+    Dim strUpdates: strUpdates = ""
+    Dim i: For i = 0 To searchResult.updates.Count - 1
+        Dim Update: Set Update = searchResult.updates.Item(i)
         strUpdates = strUpdates & Update.Title & vbCrLf
     Next
     print_debug strObjID, ">>> Required updates (" & searchResult.updates.Count & ") <<< " & vbCrLf & strUpdates
@@ -910,13 +914,14 @@ End Function
 
 '***********************************************************************************************************************
 Function dwlUpdates()
-    strObjID = "dwlUpdates"
+    Dim strObjID: strObjID = "dwlUpdates"
+    Dim en, ed
 
     'CATALOGING
     print_debug strObjID, "Cataloging updates..."
-    Set updatesToDownload = CreateObject("Microsoft.Update.UpdateColl")
-    For i = 0 To searchResult.updates.Count - 1
-        Set Update = searchResult.updates.Item(i)
+    Dim updatesToDownload: Set updatesToDownload = CreateObject("Microsoft.Update.UpdateColl")
+    Dim i: For i = 0 To searchResult.updates.Count - 1
+        Dim Update: Set Update = searchResult.updates.Item(i)
         If Not Update.EulaAccepted Then Update.AcceptEula
         updatesToDownload.Add Update
     Next
@@ -924,7 +929,7 @@ Function dwlUpdates()
     'DOWNLOADING
     print_debug strObjID, "Downloading updates..."
     On Error Resume Next
-    Set downloader = updateAgentSession.CreateUpdateDownloader()
+    Dim downloader: Set downloader = updateAgentSession.CreateUpdateDownloader()
     downloader.updates = updatesToDownload
     downloader.Download()
 
@@ -942,30 +947,38 @@ End Function
 
 '***********************************************************************************************************************
 Function instUpdates()
-    strObjID = "instUpdates"
+    Dim strObjID: strObjID = "instUpdates"
+    Dim en, ed
 
     'COLLECTING
     print_debug strObjID, "Creating collection of updates needed to install..."
-    Set updatesToInstall = CreateObject("Microsoft.Update.UpdateColl")
+    Dim updatesToInstall: Set updatesToInstall = CreateObject("Microsoft.Update.UpdateColl")
     For i = 0 To searchResult.updates.Count - 1
-        Set Update = searchResult.updates.Item(i)
+        Dim  Update: Set Update = searchResult.updates.Item(i)
         If Update.IsDownloaded Then updatesToInstall.Add Update
     Next
 
     'INSTALLER INIT
     print_debug strObjID, "Installing updates..."
     On Error Resume Next
-    Set installer = updateAgentSession.CreateUpdateInstaller()
-    installer.AllowSourcePrompts = False
-    installer.ForceQuiet = True
-    If Err.Number <> 0 Then WriteLog ("Error " & Err.Number & " has occured.  Error description: " & Err.Description)
+    Dim installer: Set installer = updateAgentSession.CreateUpdateInstaller()
+    Dim aErr: aErr = 0
+    installer.AllowSourcePrompts = False: aErr = aErr Or Err.Number
+    installer.ForceQuiet = True: aErr = aErr Or Err.Number
+
+    'Error handles
+    If Err.Number <> 0 Then
+        en = Err.Number: ed = "Error setup update installer!' (" & Err.Description & ")"
+        On Error GoTo 0
+        commonErrorHandler strObjID, en, ed, False
+    End If
     On Error GoTo 0
 
     'INSTALLING
     installer.updates = updatesToInstall
     boolUpdatesInstalled = True
     On Error Resume Next
-    Set installationResult = installer.Install()
+    Dim installationResult: Set installationResult = installer.Install()
 
     'Error handles
     If Err.Number <> 0 Then
@@ -976,8 +989,9 @@ Function instUpdates()
     On Error GoTo 0
 
     'RESULT
-    strUpdates = ""
-    For i = 0 To updatesToInstall.Count - 1
+    Dim strUpdates: strUpdates = ""
+    Dim strResult
+    Dim i: For i = 0 To updatesToInstall.Count - 1
         Select Case installationResult.GetUpdateResult(i).ResultCode
             Case 1
                 strResult = "In progress                    "
@@ -1014,23 +1028,22 @@ End Function
 
 '***********************************************************************************************************************
 Sub sendReport()
-    strObjID = "sendReport"
+    Dim strObjID: strObjID = "sendReport"
 
     If boolUpdatesInstalled Then chkReboot "end"
     If boolEmailReportEnabled Then
         If searchResult.updates.Count = 0 And Not boolRebootRequired And boolEmailIfAllOK = False Then
             print_debug strObjID, "No updates required, no pending reboot, therefore not sending email"
         Else
-            If boolFullDNSName Then
-                StrDomainName = wshshell.ExpandEnvironmentStrings("%USERDNSDOMAIN%")
-                strOutputComputerName = strComputer & "." & StrDomainName
-            Else
-                strOutputComputerName = strComputer
-            End If
-            If emailifallok = 0 Or emailifallok = 1 Then
-                If Not InStr(strMail_smtpHost, "x") Then
-                    sendMail strFrom, strTo, strMail_subject & " " & strOutputComputerName, strMessage
+            If Not strMail_smtpHost = "" Then
+                Dim strOutputComputerName
+                If boolFullDNSName Then
+                    StrDomainName = wshshell.ExpandEnvironmentStrings("%USERDNSDOMAIN%")
+                    strOutputComputerName = strComputer & "." & StrDomainName
+                Else
+                    strOutputComputerName = strComputer
                 End If
+                sendMail strMail_from, strMail_to, strMail_subject & " " & strOutputComputerName
             End If
         End If
     End If
@@ -1038,9 +1051,9 @@ End Sub
 
 '***********************************************************************************************************************
 Sub initUpdateLog()
-    strObjID = "initUpdateLog"
+    Dim strObjID: strObjID = "initUpdateLog"
 
-    strLog = getFileToText(wuLogPath)
+    Dim strLog: strLog = getFileToText(wuLogPath)
     'Exist logfile
     If strLog <> "" Then
         intLinesBefore = getLineNumber(strLog)
@@ -1051,13 +1064,13 @@ End Sub
 
 '***********************************************************************************************************************
 Sub getUpdateLog()
-    strObjID = "getUpdateLog"
+    Dim strObjID: strObjID = "getUpdateLog"
 
     'Read update logs
-    strLog = getFileToText(wuLogPath)
+    Dim strLog: strLog = getFileToText(wuLogPath)
     'Exist logfile
     If strLog = "" Then Exit Sub
-    intLinesNow = getLineNumber(strLog)
+    Dim intLinesNow: intLinesNow = getLineNumber(strLog)
 
     'Filter to last update
     print_debug strObjID, ">>> Windows Update logfile <<<" & vbCrLf & _
@@ -1073,9 +1086,8 @@ chkMailSets
 'Init Updater logfile
 initUpdateLog
 
+Dim aOK: aOK = True 'All OK
 Do
-    aOK = True 'All OK
-
     'Check and update WUA
     If aOK Then aOK = chkAgentVer
 
