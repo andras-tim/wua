@@ -937,7 +937,7 @@ Function dwlUpdates()
     If Err.Number <> 0 Then
         en = Err.Number: ed = Err.Description
         On Error GoTo 0
-        commonErrorHandler strObjID, en, ed, False
+        commonErrorHandler strObjID, en, ed, True
     End If
     On Error GoTo 0
 
@@ -970,7 +970,7 @@ Function instUpdates()
     If Err.Number <> 0 Then
         en = Err.Number: ed = "Error setup update installer!' (" & Err.Description & ")"
         On Error GoTo 0
-        commonErrorHandler strObjID, en, ed, False
+        commonErrorHandler strObjID, en, ed, True
     End If
     On Error GoTo 0
 
@@ -984,7 +984,7 @@ Function instUpdates()
     If Err.Number <> 0 Then
         en = Err.Number: ed = "Error installing updates!' (" & Err.Description & ")"
         On Error GoTo 0
-        commonErrorHandler strObjID, en, ed, False
+        commonErrorHandler strObjID, en, ed, True
     End If
     On Error GoTo 0
 
