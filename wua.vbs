@@ -19,6 +19,7 @@ Const scriptVersion = "1.0.110525"
 
 Dim hotfixes: Set hotfixes = New cHotfixes
 Dim reporting: Set reporting = New cReporting
+Dim logger: Set logger = New cLogger
 Dim config: Set config = New cConfig
 
 Const HKEY_CURRENT_USER = &H80000001
@@ -121,16 +122,16 @@ On Error GoTo 0
 Dim logFile: Set logFile = fso.OpenTextFile(logfilePath, ForAppending, True)
 
 'Print header (version info)
-print_debug "ScriptInit", "Windows Update Agent Script v" & scriptVersion
+logger.print_debug "ScriptInit", "Windows Update Agent Script v" & scriptVersion
 
 'Check the start environment
 Dim boolCScript: boolCScript = (InStr(UCase(wscript.FullName), "\CSCRIPT.EXE") > 0)
 If Not boolCScript Then
-    print_debug "ScriptInit", "WARNING: Use the ""cscript.exe //nologo"" command console output"
+    logger.print_debug "ScriptInit", "WARNING: Use the ""cscript.exe //nologo"" command console output"
 End If
 
 'Print data
-print_debug "ScriptInit", ">>> Environment info <<<" & vbCrLf & _
+logger.print_debug "ScriptInit", ">>> Environment info <<<" & vbCrLf & _
     "Command: " & wscript.FullName & vbCrLf & _
     "Computer: " & strComputer & vbCrLf & _
     strOU & vbCrLf & _
@@ -144,7 +145,7 @@ Dim statFailed: statFailed = 0
 DIm statAborted: statAborted = 0
 
 'Store start time
-print_debug "ScriptMain", "Script started"
+logger.print_debug "ScriptMain", "Script started"
 
 'Init Windows Update's errorlist
 Dim wuErrorlist: wuErrorlist = ""
@@ -168,21 +169,12 @@ End Class
 Sub print(strMsg)
     Dim aMsg: aMsg = strMsg
     If (Right(aMsg, 2) = vbCrLf) Then aMsg = Left(strMsg, Len(strMsg) - 2)
-    print_debug "STDOUT", aMsg
+    logger.print_debug "STDOUT", aMsg
     If boolCScript Then
         wscript.echo aMsg
     Else
         MsgBox strMsg, vbOKOnly
     End If
-End Sub
-
-'***********************************************************************************************************************
-Sub print_debug(strObj, strMsg)
-    Dim aMsg: aMsg = strMsg
-    Dim aTime: aTime = FormatDateTime(Time, iTimeFormat)
-    If (Right(aMsg, 2) = vbCrLf) Then aMsg = Left(strMsg, Len(strMsg) - 2)
-    aMsg = Replace(aMsg, vbCrLf, vbCrLf & vbTab & vbTab)
-    logFile.writeline "[" & aTime & "] " & strObj & vbTab & aMsg
 End Sub
 
 '***********************************************************************************************************************
@@ -235,13 +227,13 @@ End Function
 
 '***********************************************************************************************************************
 Sub commonErrorHandler(strObjID, errNum, errDesc, boolFatal)
-    print_debug strObjID, "Error 0x" & Hex(errNum) & " has occured.  Description: " & errDesc
+    logger.print_debug strObjID, "Error 0x" & Hex(errNum) & " has occured.  Description: " & errDesc
     If boolFatal Then exitScript 1
 End Sub
 
 '***********************************************************************************************************************
 Sub exitScript(intErrCode)
-    print_debug "ScriptMain", "Script ended"
+    logger.print_debug "ScriptMain", "Script ended"
     logFile.Close
     wscript.quit intErrCode
 End Sub
@@ -298,7 +290,7 @@ Function serviceStart(strService)
     'Filtering for service
     Set colServiceList = objWMIService.ExecQuery("Select * from Win32_Service where Name='" & strService & "'")
     If Not colServiceList.Count = 1 Then
-        print_debug strObjID, "Bad results for get service: " & strService
+        logger.print_debug strObjID, "Bad results for get service: " & strService
         serviceStart = False
         Exit Function
     End If
@@ -309,23 +301,23 @@ Function serviceStart(strService)
     'Get Service
     Dim errReturn
     For Each objService In colServiceList
-        print_debug strObjID, "Starting service: " & strService & " (" & objService.DisplayName & ")"
+        logger.print_debug strObjID, "Starting service: " & strService & " (" & objService.DisplayName & ")"
         'Start service
         errReturn = objService.StartService()
         If errReturn = 0 Then
             Do
                 Wscript.Sleep 1000
                 strState = serviceGetState(strService)
-                print_debug strObjID, "State (" & intTimeout & "): " & strState
+                logger.print_debug strObjID, "State (" & intTimeout & "): " & strState
                 intTimeout = intTimeout -1
             Loop Until strState = "Running" Or intTimeout = 0
 
             If intTimeout = 0 Then
-                print_debug strObjID, "Starting service timeout: " & strService & " (" & objService.DisplayName & ")"
+                logger.print_debug strObjID, "Starting service timeout: " & strService & " (" & objService.DisplayName & ")"
                 ret = False
             End If
         Else
-            print_debug strObjID, "Starting service error: " & strService & " (" & objService.DisplayName & "); " & _
+            logger.print_debug strObjID, "Starting service error: " & strService & " (" & objService.DisplayName & "); " & _
                 "return: " & errReturn
         End If
     Next
@@ -342,7 +334,7 @@ Function serviceStop(strService)
     'Filtering for service
     Set colServiceList = objWMIService.ExecQuery("Select * from Win32_Service where Name='" & strService & "'")
     If Not colServiceList.Count = 1 Then
-        print_debug strObjID, "Bad results for get service: " & strService
+        logger.print_debug strObjID, "Bad results for get service: " & strService
         serviceStop = False
         Exit Function
     End If
@@ -352,23 +344,23 @@ Function serviceStop(strService)
     intTimeout=30'sec
     'Get Service
     For Each objService In colServiceList
-        print_debug strObjID, "Stoping service: " & strService & " (" & objService.DisplayName & ")"
+        logger.print_debug strObjID, "Stoping service: " & strService & " (" & objService.DisplayName & ")"
         'Stop service
         errReturn = objService.StopService()
         If errReturn = 0 Then
             Do
                 Wscript.Sleep 1000
                 strState = serviceGetState(strService)
-                print_debug strObjID, "State (" & intTimeout & "): " & strState
+                logger.print_debug strObjID, "State (" & intTimeout & "): " & strState
                 intTimeout = intTimeout -1
             Loop Until strState = "Stopped" Or intTimeout = 0
 
             If intTimeout = 0 Then
-                print_debug strObjID, "Stoping service timeout: " & strService & " (" & objService.DisplayName & ")"
+                logger.print_debug strObjID, "Stoping service timeout: " & strService & " (" & objService.DisplayName & ")"
                 ret = False
             End If
         Else
-            print_debug strObjID, "Stoping service error: " & strService & " (" & objService.DisplayName & "); " & _
+            logger.print_debug strObjID, "Stoping service error: " & strService & " (" & objService.DisplayName & "); " & _
                 "return: " & errReturn
         End If
     Next
@@ -385,7 +377,7 @@ Function delSubItems(strPath)
     Dim ret: ret = False
 
     'Get object
-    print_debug strObjID, "Delete contents in: " & strPath
+    logger.print_debug strObjID, "Delete contents in: " & strPath
     Set objFolder = fso.GetFolder(strPath)
 
     On Error Resume Next
@@ -401,13 +393,13 @@ Function delSubItems(strPath)
     'Complete?
     If Err.Number = 0 Then
         If objFolder.SubFolders.Count = 0 And objFolder.Files.Count = 0 Then
-            print_debug strObjID, "Delete completed"
+            logger.print_debug strObjID, "Delete completed"
             ret = True
         Else
-            print_debug strObjID, "Delete semicompleted"
+            logger.print_debug strObjID, "Delete semicompleted"
         End if
     Else
-        print_debug strObjID, "Error occured on delete"
+        logger.print_debug strObjID, "Error occured on delete"
     End If
     On Error Goto 0
 
@@ -438,6 +430,32 @@ Function getFileToText(fn)
     'Return the file contents
     getFileToText = ret
 End Function
+
+
+Class cLogger
+    Public settings, constants
+
+    Private Sub Class_Initialize
+        'Init
+        Set constants = CreateObject("Scripting.Dictionary")
+        With constants
+            .Add "", ""
+        End With
+
+        Set settings = CreateObject("Scripting.Dictionary")
+        With settings
+            .Add "", ""
+        End With
+    End Sub
+
+    Public Sub print_debug(strObj, strMsg)
+        Dim aMsg: aMsg = strMsg
+        Dim aTime: aTime = FormatDateTime(Time, iTimeFormat)
+        If (Right(aMsg, 2) = vbCrLf) Then aMsg = Left(strMsg, Len(strMsg) - 2)
+        aMsg = Replace(aMsg, vbCrLf, vbCrLf & vbTab & vbTab)
+        logFile.writeline "[" & aTime & "] " & strObj & vbTab & aMsg
+    End Sub
+End Class
 
 
 '*********************************************************************************************************************** CLASS reporting
@@ -487,27 +505,27 @@ Class cReporting
             If settings("smtpAuthType") = "" Then
                 settings("smtpAuthType") = "CDOANONYMOUS"
             Else
-                print_debug strObjID, "SMTP Auth User ID: " & settings("smtpAuthID")
+                logger.print_debug strObjID, "SMTP Auth User ID: " & settings("smtpAuthID")
                 If settings("smtpAuthID") = "" Then
-                    print_debug strObjID, "No SMTP user ID was specified, even though SMTP Authentication was " & _
+                    logger.print_debug strObjID, "No SMTP user ID was specified, even though SMTP Authentication was " & _
                         "configured for " & settings("smtpAuthType") & "." & vbCrLf & "Attempting to switch to anonymous " & _
                         "authentication..."
                     settings("smtpAuthType") = "CDOANONYMOUS"
                     If settings("smtpAuthPassword") <> "" Then
-                        print_debug strObjID, "You have specified a SMTP password, but no user ID has been configured " & _
+                        logger.print_debug strObjID, "You have specified a SMTP password, but no user ID has been configured " & _
                         "for authentication."
                     End If
                 Else
                     If settings("smtpAuthPassword") = "" Then
-                        print_debug strObjID, "You have specified a SMTP user ID, but have not specified a password." & _
+                        logger.print_debug strObjID, "You have specified a SMTP user ID, but have not specified a password." & _
                             vbCrLf & "Switching to anonymous authentication."
                     End If
                     settings("smtpAuthType") = "CDOANONYMOUS"
                 End If
-                If settings("smtpAuthPassword") <> "" Then print_debug strObjID, "SMTP password configured, but hidden..."
+                If settings("smtpAuthPassword") <> "" Then logger.print_debug strObjID, "SMTP password configured, but hidden..."
             End If
         End If
-        print_debug strObjID, "SMTP Authentication type: " & settings("smtpAuthType")
+        logger.print_debug strObjID, "SMTP Authentication type: " & settings("smtpAuthType")
     End Sub
 
     Function sendMail()
@@ -515,7 +533,7 @@ Class cReporting
         Dim en, ed
 
         chkMailSets 'FIXME: nincs itt jo helyen
-        print_debug strObjID, ">>> Calling sendMail routine <<<" & vbCrLf & _
+        logger.print_debug strObjID, ">>> Calling sendMail routine <<<" & vbCrLf & _
             "To: " & settings("mailTo") & vbCrLf & _
             "From: " & settings("mailFrom") & vbCrLf & _
             "Subject: " & settings("mailSubject") & vbCrLf & _
@@ -575,7 +593,7 @@ Class cReporting
             commonErrorHandler strObjID, en, ed, False
         Else
             On Error GoTo 0
-            print_debug strObjID, "The email has been sent to " & settings("smtpHost")
+            logger.print_debug strObjID, "The email has been sent to " & settings("smtpHost")
         End If
     End Function
 
@@ -585,7 +603,7 @@ Class cReporting
         If boolUpdatesInstalled Then chkReboot "end"
         If boolEmailReportEnabled Then
             If searchResult.updates.Count = 0 And Not boolRebootRequired And boolEmailIfAllOK = False Then
-                print_debug strObjID, "No updates required, no pending reboot, therefore not sending email"
+                logger.print_debug strObjID, "No updates required, no pending reboot, therefore not sending email"
             Else
                 If boolFullDNSName Then
                     StrDomainName = wshshell.ExpandEnvironmentStrings("%USERDNSDOMAIN%")
@@ -616,14 +634,14 @@ Function chkAgentVer()
 
     On Error Resume Next
     Dim bUpdateNeeded: bUpdateNeeded = True ' init value
-    print_debug strObjID, "Checking version of Windows Update agent against version " & strWUAgentVersion & "..."
+    logger.print_debug strObjID, "Checking version of Windows Update agent against version " & strWUAgentVersion & "..."
     Set updateAgentSession = CreateObject("Microsoft.Update.AgentInfo")
     If Err.Number = 0 Then
         updateinfo = updateAgentSession.GetInfo("ProductVersionString")
         If Replace(updateinfo, strLocaleVerDelim, "") = Replace(strWUAgentVersion, strLocaleVerDelim, "") Then
             bUpdateNeeded = False
         ElseIf updateinfo > strWUAgentVersion Then
-            print_debug strObjID, "Your installed version of the Windows Update Agent (" & updateinfo & ") is " & _
+            logger.print_debug strObjID, "Your installed version of the Windows Update Agent (" & updateinfo & ") is " & _
                 "newer than the referenced version (" & strWUAgentVersion & ")."
             bUpdateNeeded = False
         End If
@@ -631,7 +649,7 @@ Function chkAgentVer()
     On Error Goto 0
 
     If bUpdateNeeded Then
-        print_debug strObjID, "File version (" & updateinfo & ") does not match, WUA udapte required."
+        logger.print_debug strObjID, "File version (" & updateinfo & ") does not match, WUA udapte required."
 
         'stop the Automatic Updates service
         If Not serviceStop("wuauserv") Then
@@ -683,7 +701,7 @@ Function chkAgentSets()
     Dim retWUAmode: retWUAmode = chkAgentSet_getretWUAmode
 
     'Debug print
-    print_debug strObjID, ">>> WUA Settings <<<" & vbCrLf & _
+    logger.print_debug strObjID, ">>> WUA Settings <<<" & vbCrLf & _
         "WUA mode: " & retWUAmode  & vbCrLf & _
         "Server: " & regWSUSServer & vbCrLf & _
         "Scheduled: " & retScheduled & vbCrLf & _
@@ -760,7 +778,7 @@ Function updateSearcher()
     Set updateAgentSession = CreateObject("Microsoft.Update.Session")
     Set updateSearcher = updateAgentSession.CreateupdateSearcher()
 
-    print_debug strObjID, "Filtering updates: " & update_criteria
+    logger.print_debug strObjID, "Filtering updates: " & update_criteria
     Set searchResult = updateSearcher.Search(update_criteria)
 
     'Handle some common errors here
@@ -824,16 +842,16 @@ Function wuaErrorHandler(strObjID, errNum, errDesc, ifUnhandledBeFatal)' Boolean
     commonErrorHandler strObjID, en, ed, False
 
     'Try hotfix it
-    print_debug strObjID, "Checking hotfixes for 0x" & Hex(errNum) & " update error..."
+    logger.print_debug strObjID, "Checking hotfixes for 0x" & Hex(errNum) & " update error..."
     res = hotfixes.errorHotfixes(errNum)
     If Not res Then
-        print_debug strObjID, "The previous attempts have not solved the problem. Will not try again!"
+        logger.print_debug strObjID, "The previous attempts have not solved the problem. Will not try again!"
         If boolFatal Then
             wuaErrorHandler = False
             exitScript 1
         End If
     Else
-        print_debug strObjID, "Hotfix applied, restart the update process"
+        logger.print_debug strObjID, "Hotfix applied, restart the update process"
         wuaErrorHandler = False
         Exit Function
     End if
@@ -862,7 +880,7 @@ Sub chkReboot(beforeorafter)
     Else
         strMsg = "Computer does not have any pending reboots (" & strCheck & ")."
     End If
-    If strMsg <> "" Then print_debug strObjID, strMsg
+    If strMsg <> "" Then logger.print_debug strObjID, strMsg
    'wscript.sleep 4000
 End Sub
 
@@ -872,7 +890,7 @@ Function detectNow()
     Dim en, ed
 
     'SEARCHING UPDATES
-    print_debug strObjID, "Searching updates..."
+    logger.print_debug strObjID, "Searching updates..."
     On Error Resume Next
     autoUpdateClient.detectnow()
 
@@ -893,7 +911,7 @@ Function detectNow()
         Dim Update: Set Update = searchResult.updates.Item(i)
         strUpdates = strUpdates & Update.Title & vbCrLf
     Next
-    print_debug strObjID, ">>> Required updates (" & searchResult.updates.Count & ") <<< " & vbCrLf & strUpdates
+    logger.print_debug strObjID, ">>> Required updates (" & searchResult.updates.Count & ") <<< " & vbCrLf & strUpdates
 
     'All OK
     detectNow = True
@@ -905,7 +923,7 @@ Function dwlUpdates()
     Dim en, ed
 
     'CATALOGING
-    print_debug strObjID, "Cataloging updates..."
+    logger.print_debug strObjID, "Cataloging updates..."
     Dim updatesToDownload: Set updatesToDownload = CreateObject("Microsoft.Update.UpdateColl")
     Dim i: For i = 0 To searchResult.updates.Count - 1
         Dim Update: Set Update = searchResult.updates.Item(i)
@@ -914,7 +932,7 @@ Function dwlUpdates()
     Next
 
     'DOWNLOADING
-    print_debug strObjID, "Downloading updates..."
+    logger.print_debug strObjID, "Downloading updates..."
     On Error Resume Next
     Dim downloader: Set downloader = updateAgentSession.CreateUpdateDownloader()
     downloader.updates = updatesToDownload
@@ -938,7 +956,7 @@ Function instUpdates()
     Dim en, ed
 
     'COLLECTING
-    print_debug strObjID, "Creating collection of updates needed to install..."
+    logger.print_debug strObjID, "Creating collection of updates needed to install..."
     Dim updatesToInstall: Set updatesToInstall = CreateObject("Microsoft.Update.UpdateColl")
     Dim Update
     For i = 0 To searchResult.updates.Count - 1
@@ -947,7 +965,7 @@ Function instUpdates()
     Next
 
     'INSTALLER INIT
-    print_debug strObjID, "Installing updates..."
+    logger.print_debug strObjID, "Installing updates..."
     On Error Resume Next
     Dim installer: Set installer = updateAgentSession.CreateUpdateInstaller()
     Dim aErr: aErr = 0
@@ -999,9 +1017,9 @@ Function instUpdates()
         End Select
         strUpdates = strUpdates & strResult & " : " & updatesToInstall.Item(i).Title & vbCrLf
     Next
-    print_debug strObjID, ">>> Installation results (" & updatesToInstall.Count & " updates) <<<" & vbCrLf & strUpdates
+    logger.print_debug strObjID, ">>> Installation results (" & updatesToInstall.Count & " updates) <<<" & vbCrLf & strUpdates
 
-    print_debug strObjID, ">>> Installation Summary <<<" & vbCrLf & _
+    logger.print_debug strObjID, ">>> Installation Summary <<<" & vbCrLf & _
         "Result: " & installationResult.ResultCode & vbCrLf & _
         "Reboot Required: " & installationResult.RebootRequired & vbCrLf & _
         "In progress: " & statInProgress & vbCrLf & _
@@ -1038,7 +1056,7 @@ Sub getUpdateLog()
     Dim intLinesNow: intLinesNow = getLineNumber(strLog)
 
     'Filter to last update
-    print_debug strObjID, ">>> Windows Update logfile <<<" & vbCrLf & _
+    logger.print_debug strObjID, ">>> Windows Update logfile <<<" & vbCrLf & _
         getLineRange(strLog, intLinesBefore, intLinesNow - 1)
 End Sub
 
@@ -1143,7 +1161,7 @@ Do
     'Check update count
     If aOK Then
         If searchResult.updates.Count = 0 Then
-            print_debug "ScriptMain", "There's no new update"
+            logger.print_debug "ScriptMain", "There's no new update"
             'Print results
             getUpdateLog
             reporting.sendReport
@@ -1164,5 +1182,5 @@ Do
         endOfScript
     End If
 
-    If Not aOK Then print_debug "ScriptMain", "===RESTART==="
+    If Not aOK Then logger.print_debug "ScriptMain", "===RESTART==="
 Loop Until aOK
