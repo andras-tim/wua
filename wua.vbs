@@ -18,21 +18,14 @@ Option Explicit
 Const scriptVersion = "1.0.110525"
 
 Dim hotfixes: Set hotfixes = New cHotfixes
+Dim reporting: Set reporting = New cReporting
+Dim config: Set config = New cConfig
 
 Const HKEY_CURRENT_USER = &H80000001
 Const HKEY_LOCAL_MACHINE = &H80000002
 Const ForReading = 1
 Const ForWriting = 2
 Const ForAppending = 8
-Const TristateUseDefault = -2
-Const cdoAnonymous = 0 'Do not authenticate
-Const cdoBasic = 1 'basic (clear-text) authentication
-Const cdoNTLM = 2 'NTLM
-Const cdoSendUsingMethod = "http://schemas.microsoft.com/cdo/configuration/sendusing"
-Const cdoSendUsingPort = 2
-Const cdoSMTPServer = "http://schemas.microsoft.com/cdo/configuration/smtpserver"
-Const cdoSMTPServerport = "http://schemas.microsoft.com/cdo/configuration/smtpserverport"
-Const cdoSMTPconnectiontimeout = "http://schemas.microsoft.com/cdo/configuration/Connectiontimeout"
 
 'Public Objects
 Dim updateAgentSession, autoUpdateClient, searchResult
@@ -79,18 +72,6 @@ Dim wuErrorlistPath: wuErrorlistPath = "wua-errorlist.csv"
 
 'Logfile path
 Dim logfilePath: logfilePath = wshsysenv("SYSTEMDRIVE") & "\" & "wua-last.log"
-
-'Mail settings
-Dim strMail_from: strMail_from = LCase(strComputer)
-Dim strMail_to: strMail_to = "FIXME@EMAIL"
-Dim strMail_subject: strMail_subject = "WUA Script - WSUS Update log file from" 'computer name
-Dim strMail_smtpHost: strMail_smtpHost = "FIXME.SMTP.SERVER"
-Dim strMail_smtpPort: strMail_smtpPort = 25
-'set your SMTP server authentication type. Possible values:cdoAnonymous|cdoBasic|cdoNTLM
-'You do not need to configure an id/pass combo with cdoAnonymous
-Dim strMail_smtpAuthType: strMail_smtpAuthType = "cdoAnonymous"
-Dim strMail_smtpAuthID: strMail_smtpAuthID = ""
-Dim strMail_smtpAuthPassword: strMail_smtpAuthPassword = ""
 
 'Version number of the Windows Update agent you wish to compare installed version against.  If the version installed is
 'not equal to this version, then it will install the exe referred to in var 'wuaInstallerPath' above.
@@ -168,6 +149,19 @@ print_debug "ScriptMain", "Script started"
 'Init Windows Update's errorlist
 Dim wuErrorlist: wuErrorlist = ""
 
+Class cConfig
+    Private Sub Class_Initialize
+        With reporting
+            'Mail settings
+            .settings("mailFrom") = LCase(strComputer)
+            .settings("mailTo") = "FIXME@EMAIL"
+            .settings("mailSubject") = "WUA Script - WSUS Update log file from" 'computer name
+            .settings("smtpHost") = "FIXME.SMTP.SERVER"
+            'set your SMTP server authentication type. Possible values:CDOANONYMOUS|CDOBASIC|CDONTLM
+            '.settings("smtpAuthType") = "CDOANONYMOUS"
+        End With
+    End Sub
+End Class
 
 '*********************************************************************************************************************** Common functions
 '***********************************************************************************************************************
@@ -251,83 +245,6 @@ Sub exitScript(intErrCode)
     logFile.Close
     wscript.quit intErrCode
 End Sub
-
-'***********************************************************************************************************************
-Function sendMail(strFrom, strTo, strMail_subject)
-    Dim strObjID: strObjID = "sendMail"
-    Dim iMsg, Flds
-
-    print_debug strObjID, ">>> Calling sendMail routine <<<" & vbCrLf & _
-        "To: " & strMail_to & vbCrLf & _
-        "From: " & strMail_from & vbCrLf & _
-        "Subject: " & strMail_subject & vbCrLf & _
-        "SMTP Server: " & strMail_smtpHost
-
-    '//  Create the CDO connections.
-    On Error Resume Next
-    Set iMsg = CreateObject("CDO.Message")
-    Set Flds = iMsg.Configuration.Fields
-
-    'Error handles
-    If Err.Number <> 0 Then
-        en = Err.Number: ed = "Init error, the mail will be not send!' (" & Err.Description & ")"
-        On Error GoTo 0
-        commonErrorHandler strObjID, en, ed, False
-        Exit Function
-    End If
-    On Error GoTo 0
-
-    With Flds
-        '// SMTP protocol init
-        If LCase(strMail_smtpAuthType) <> "cdoanonymous" Then
-            'Type of authentication, NONE, Basic (Base64 encoded), NTLM
-            .Item("http://schemas.microsoft.com/cdo/configuration/smtpauthenticate") = strMail_smtpAuthType
-
-            'Your UserID on the SMTP server
-            .Item("http://schemas.microsoft.com/cdo/configuration/sendusername") = strMail_smtpAuthID
-
-            'Your password on the SMTP server
-            .Item("http://schemas.microsoft.com/cdo/configuration/sendpassword") = strMail_smtpAuthPassword
-        End If
-
-        '// SMTP server configuration.
-        .Item(cdoSendUsingMethod) = cdoSendUsingPort
-        .Item(cdoSMTPServer) = strMail_smtpHost
-        .Item(cdoSMTPServerport) = strMail_smtpPort
-        .Item(cdoSMTPconnectiontimeout) = 60
-        .Update
-    End With
-
-    Dim r: Set r = fso.OpenTextFile(logfilePath, ForReading, False, TristateUseDefault)
-    Dim strMessage: strMessage = "<pre>" & r.readall & "</pre>"
-
-    '//  Set the message properties.
-    With iMsg
-        .To = strMail_to
-        .From = strMail_from
-        .Subject = strMail_subject
-    End With
-
-    'iMsg.AddAttachment wsuslog
-    strMessage = Replace(strMessage, vbTab, "&#09;")
-    iMsg.HTMLBody = Replace(strMessage, vbNewLine, "<br>")
-    '//  Send the message.
-
-    On Error Resume Next
-    iMsg.Send ' send the message.
-    Set iMsg = Nothing
-
-    'Error handles
-    If Err.Number <> 0 Then
-        en = Err.Number: ed = "Problem sending mail to '" & strMail_smtpHost & "' (" & Err.Description & ")"
-        On Error GoTo 0
-        commonErrorHandler strObjID, en, ed, False
-    Else
-        On Error GoTo 0
-        print_debug strObjID, "The email has been sent to " & strMail_smtpHost
-    End If
-
-End Function
 
 '***********************************************************************************************************************
 Sub endOfScript()
@@ -523,43 +440,169 @@ Function getFileToText(fn)
 End Function
 
 
+'*********************************************************************************************************************** CLASS reporting
+'***********************************************************************************************************************
+Class cReporting
+    Public settings, constants
 
+    Private Sub Class_Initialize
+        'Init
+        Set constants = CreateObject("Scripting.Dictionary")
+        With constants
+            .Add "cdoSMTPServer", "http://schemas.microsoft.com/cdo/configuration/smtpserver"
+            .Add "cdoSMTPServerPort", "http://schemas.microsoft.com/cdo/configuration/smtpserverport"
+            .Add "cdoSMTPConnectionTimeout", "http://schemas.microsoft.com/cdo/configuration/Connectiontimeout"
+            .Add "cdoSMTPAuthenticate", "http://schemas.microsoft.com/cdo/configuration/smtpauthenticate"
 
+            .Add "cdoSendUsingMethod", "http://schemas.microsoft.com/cdo/configuration/sendusing"
+            .Add "cdoSendUserName", "http://schemas.microsoft.com/cdo/configuration/sendusername"
+            .Add "cdoSendPassword", "http://schemas.microsoft.com/cdo/configuration/sendpassword"
+
+            .Add "cdoSendUsingPort", 2
+
+            .Add "TristateUseDefault", -2 'Use the computer's regional settings
+            .Add "TristateTrue", -1 'True
+            .Add "TristateFalse", 0 'False
+        End With
+
+        Set settings = CreateObject("Scripting.Dictionary")
+        With settings
+            .Add "mailFrom", ""
+            .Add "mailTo", ""
+            .Add "mailSubject", "WUA Script - WSUS Update log file from"
+            .Add "smtpHost", ""
+            .Add "smtpPort", 25
+            .Add "smtpConnectionTimeout", 60
+            .Add "smtpAuthType", "CDOANONYMOUS"
+            .Add "smtpAuthID", ""
+            .Add "smtpAuthPassword", ""
+        End With
+    End Sub
+
+    Private Sub chkMailSets()
+        Dim strObjID: strObjID = "chkMailSets"
+        If boolEmailReportEnabled = False Then Exit Sub
+
+        If LCase(settings("smtpAuthType")) <> "CDOANONYMOUS" Then
+            If settings("smtpAuthType") = "" Then
+                settings("smtpAuthType") = "CDOANONYMOUS"
+            Else
+                print_debug strObjID, "SMTP Auth User ID: " & settings("smtpAuthID")
+                If settings("smtpAuthID") = "" Then
+                    print_debug strObjID, "No SMTP user ID was specified, even though SMTP Authentication was " & _
+                        "configured for " & settings("smtpAuthType") & "." & vbCrLf & "Attempting to switch to anonymous " & _
+                        "authentication..."
+                    settings("smtpAuthType") = "CDOANONYMOUS"
+                    If settings("smtpAuthPassword") <> "" Then
+                        print_debug strObjID, "You have specified a SMTP password, but no user ID has been configured " & _
+                        "for authentication."
+                    End If
+                Else
+                    If settings("smtpAuthPassword") = "" Then
+                        print_debug strObjID, "You have specified a SMTP user ID, but have not specified a password." & _
+                            vbCrLf & "Switching to anonymous authentication."
+                    End If
+                    settings("smtpAuthType") = "CDOANONYMOUS"
+                End If
+                If settings("smtpAuthPassword") <> "" Then print_debug strObjID, "SMTP password configured, but hidden..."
+            End If
+        End If
+        print_debug strObjID, "SMTP Authentication type: " & settings("smtpAuthType")
+    End Sub
+
+    Function sendMail()
+        Dim strObjID: strObjID = "sendMail"
+        Dim en, ed
+
+        chkMailSets 'FIXME: nincs itt jo helyen
+        print_debug strObjID, ">>> Calling sendMail routine <<<" & vbCrLf & _
+            "To: " & settings("mailTo") & vbCrLf & _
+            "From: " & settings("mailFrom") & vbCrLf & _
+            "Subject: " & settings("mailSubject") & vbCrLf & _
+            "SMTP Server: " & settings("smtpHost")
+
+        'Create the CDO connections.
+        On Error Resume Next
+        Dim iMsg: Set iMsg = CreateObject("CDO.Message")
+        Dim Flds: Set Flds = iMsg.Configuration.Fields
+
+        'Error handles
+        If Err.Number <> 0 Then
+            en = Err.Number: ed = "Init error, the mail will be not send!' (" & Err.Description & ")"
+            On Error GoTo 0
+            commonErrorHandler strObjID, en, ed, False
+            Exit Function
+        End If
+        On Error GoTo 0
+
+        With Flds
+            'SMTP server configuration.
+            If LCase(settings("smtpAuthType")) <> "cdoanonymous" Then
+                .Item(constants("cdoSMTPAuthenticate")) = settings("smtpAuthType")
+                .Item(constants("cdoSendUserName")) = settings("smtpAuthID")
+                .Item(constants("cdoSendPassword")) = settings("smtpAuthPassword")
+            End If
+            .Item(constants("cdoSendUsingMethod")) = constants("cdoSendUsingPort")
+            .Item(constants("cdoSMTPServer")) = settings("smtpHost")
+            .Item(constants("cdoSMTPServerPort")) = settings("smtpPort")
+            .Item(constants("cdoSMTPConnectionTimeout")) = settings("smtpConnectionTimeout")
+            .Update
+        End With
+
+        Dim r: Set r = fso.OpenTextFile(logfilePath, ForReading, False, constants("TristateUseDefault"))
+        Dim strMessage: strMessage = "<pre>" & r.readall & "</pre>"
+
+        'Set the message properties.
+        With iMsg
+            .To = settings("mailTo")
+            .From = settings("mailFrom")
+            .Subject = settings("mailSubject")
+        End With
+
+        'iMsg.AddAttachment wsuslog
+        strMessage = Replace(strMessage, vbTab, "&#09;")
+        iMsg.HTMLBody = Replace(strMessage, vbNewLine, "<br>")
+
+        'Send the message.
+        On Error Resume Next
+        iMsg.Send ' send the message.
+        Set iMsg = Nothing
+
+        'Error handles
+        If Err.Number <> 0 Then
+            en = Err.Number: ed = "Problem sending mail to '" & settings("smtpHost") & "' (" & Err.Description & ")"
+            On Error GoTo 0
+            commonErrorHandler strObjID, en, ed, False
+        Else
+            On Error GoTo 0
+            print_debug strObjID, "The email has been sent to " & settings("smtpHost")
+        End If
+    End Function
+
+    Public Sub sendReport()
+        Dim strObjID: strObjID = "sendReport"
+
+        If boolUpdatesInstalled Then chkReboot "end"
+        If boolEmailReportEnabled Then
+            If searchResult.updates.Count = 0 And Not boolRebootRequired And boolEmailIfAllOK = False Then
+                print_debug strObjID, "No updates required, no pending reboot, therefore not sending email"
+            Else
+                If boolFullDNSName Then
+                    StrDomainName = wshshell.ExpandEnvironmentStrings("%USERDNSDOMAIN%")
+                    settings("mailSubject") = settings("mailSubject") & " " & strComputer & "." & StrDomainName
+                Else
+                    settings("mailSubject") = settings("mailSubject") & " " & strComputer
+                End If
+                If Not settings("smtpHost") = "" Then
+                    reporting.sendMail
+                End If
+            End If
+        End If
+    End Sub
+End Class
 
 
 '*********************************************************************************************************************** WUA functions
-'***********************************************************************************************************************
-Sub chkMailSets()
-    Dim strObjID: strObjID = "chkMailSets"
-    If boolEmailReportEnabled = False Then Exit Sub
-
-    If LCase(strMail_smtpAuthType) <> "cdoanonymous" Then
-        If strMail_smtpAuthType = "" Then
-            strMail_smtpAuthType = "cdoAnonymous"
-        Else
-            print_debug strObjID, "SMTP Auth User ID: " & sAuthID
-            If SMTPUserID = "" Then
-                print_debug strObjID, "No SMTP user ID was specified, even though SMTP Authentication was " & _
-                    "configured for " & strMail_smtpAuthType & "." & vbCrLf & "Attempting to switch to anonymous " & _
-                    "authentication..."
-                strMail_smtpAuthType = "cdoAnonymous"
-                If strMail_smtpAuthPassword <> "" Then
-                    print_debug strObjID, "You have specified a SMTP password, but no user ID has been configured " & _
-                    "for authentication. Check the INI file (" & sINI & ") again and re-run the script."
-                End If
-            Else
-                If strMail_smtpAuthPassword = "" Then
-                    print_debug strObjID, "You have specified a SMTP user ID, but have not specified a password." & _
-                        vbCrLf & "Switching to anonymous authentication."
-                End If
-                strMail_smtpAuthType = "cdoAnonymous"
-            End If
-            If strMail_smtpAuthPassword <> "" Then print_debug strObjID, "SMTP password configured, but hidden..."
-        End If
-    End If
-    print_debug strObjID, "SMTP Authentication type: " & strMail_smtpAuthType
-End Sub
-
 '***********************************************************************************************************************
 Function chkAgentVer()
     Dim strObjID: strObjID = "chkAgentVer"
@@ -972,29 +1015,6 @@ Function instUpdates()
 End Function
 
 '***********************************************************************************************************************
-Sub sendReport()
-    Dim strObjID: strObjID = "sendReport"
-
-    If boolUpdatesInstalled Then chkReboot "end"
-    If boolEmailReportEnabled Then
-        If searchResult.updates.Count = 0 And Not boolRebootRequired And boolEmailIfAllOK = False Then
-            print_debug strObjID, "No updates required, no pending reboot, therefore not sending email"
-        Else
-            If Not strMail_smtpHost = "" Then
-                Dim strOutputComputerName
-                If boolFullDNSName Then
-                    StrDomainName = wshshell.ExpandEnvironmentStrings("%USERDNSDOMAIN%")
-                    strOutputComputerName = strComputer & "." & StrDomainName
-                Else
-                    strOutputComputerName = strComputer
-                End If
-                sendMail strMail_from, strMail_to, strMail_subject & " " & strOutputComputerName
-            End If
-        End If
-    End If
-End Sub
-
-'***********************************************************************************************************************
 Sub initUpdateLog()
     Dim strObjID: strObjID = "initUpdateLog"
 
@@ -1103,9 +1123,6 @@ End Class
 
 '*********************************************************************************************************************** WUA main
 '***********************************************************************************************************************
-'Init script
-chkMailSets
-
 'Init Updater logfile
 initUpdateLog
 
@@ -1129,7 +1146,7 @@ Do
             print_debug "ScriptMain", "There's no new update"
             'Print results
             getUpdateLog
-            sendReport
+            reporting.sendReport
             endOfScript
         End If
     End If
@@ -1143,7 +1160,7 @@ Do
     'Print results
     If aOK Then
         getUpdateLog
-        sendReport
+        reporting.sendReport
         endOfScript
     End If
 
