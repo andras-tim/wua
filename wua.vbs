@@ -787,7 +787,7 @@ Function wuaErrorHandler(strObjID, errNum, errDesc, ifUnhandledBeFatal)' Boolean
 
     'Get error description
     arrError = wuaGetErrorDescription(errNum)
-    If IsNull(arrError) Then arrError = Array("-","Unknown error")
+    If IsNull(arrError) Then arrError = Array("-","Unknown error. See the http://windows.microsoft.com/en-US/windows7/Windows-Update-error-" & errNum & " for more information.")
 
     'Print error
     en = errNum: ed = arrError(0) & vbCrLf & "Details: " & arrError(1)
@@ -953,8 +953,9 @@ Function instUpdates()
     'COLLECTING
     print_debug strObjID, "Creating collection of updates needed to install..."
     Dim updatesToInstall: Set updatesToInstall = CreateObject("Microsoft.Update.UpdateColl")
+    Dim Update
     For i = 0 To searchResult.updates.Count - 1
-        Dim  Update: Set Update = searchResult.updates.Item(i)
+        Set Update = searchResult.updates.Item(i)
         If Update.IsDownloaded Then updatesToInstall.Add Update
     Next
 
