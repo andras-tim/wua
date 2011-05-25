@@ -17,6 +17,8 @@ Option Explicit
 '***********************************************************************************************************************
 Const scriptVersion = "1.0.110525"
 
+Dim hotfixes: Set hotfixes = New cHotfixes
+
 Const HKEY_CURRENT_USER = &H80000001
 Const HKEY_LOCAL_MACHINE = &H80000002
 Const ForReading = 1
@@ -162,9 +164,6 @@ DIm statAborted: statAborted = 0
 
 'Store start time
 print_debug "ScriptMain", "Script started"
-
-'Init the applyed hotfix list
-Dim lastTryedHotfix: lastTryedHotfix = ""
 
 'Init Windows Update's errorlist
 Dim wuErrorlist: wuErrorlist = ""
@@ -524,20 +523,8 @@ Function getFileToText(fn)
 End Function
 
 
-'*********************************************************************************************************************** Run functions
-'***********************************************************************************************************************
-Function runCommand(strCmd)
-    Dim strObjID: strObjID = "runCommand"
-    dim ret
 
-    'Run command
-    print_debug strObjID, "Run command: " & strCmd
-    ret = wshshell.Run(strCmd, 0, true)
 
-    'Return
-    print_debug strObjID, "Return code: " & ret
-    runCommand = ret
-End Function
 
 
 '*********************************************************************************************************************** WUA functions
@@ -795,7 +782,7 @@ Function wuaErrorHandler(strObjID, errNum, errDesc, ifUnhandledBeFatal)' Boolean
 
     'Try hotfix it
     print_debug strObjID, "Checking hotfixes for 0x" & Hex(errNum) & " update error..."
-    res = errorHotfixes(errNum)
+    res = hotfixes.errorHotfixes(errNum)
     If Not res Then
         print_debug strObjID, "The previous attempts have not solved the problem. Will not try again!"
         If boolFatal Then
@@ -809,49 +796,6 @@ Function wuaErrorHandler(strObjID, errNum, errDesc, ifUnhandledBeFatal)' Boolean
     End if
 
     wuaErrorHandler = True
-End Function
-
-'***********************************************************************************************************************
-Function errorHotfixes(errNum)'boolean :: true if we have hotfix for it
-    Dim strObjID: strObjID = "errorHotfixes"
-    Dim hexErrNum: hexErrNum = "0x" & UCase(Hex(errNum))
-
-    'Check the last applyed hotfix ID (for recursive hotfixapply check)
-    If lastTryedHotfix = hexErrNum Then
-        errorHotfixes = False
-        Exit Function
-    End If
-
-    Dim ret: ret = True
-    Select Case hexErrNum
-        Case "0x8024400D"
-            ret = ret Or serviceStop("wuauserv")
-            ret = ret Or delSubItems("C:\WINDOWS\SoftwareDistribution\DataStore")
-            ret = ret Or delSubItems("C:\Windows\SoftwareDistribution\Download")
-            ret = ret Or runCommand("reg delete ""HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\" & _
-                "WindowsUpdate"" /v SusClientId /f")
-            ret = ret Or runCommand("reg delete ""HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\" & _
-                "WindowsUpdate"" /v SusClientIdValidation /f")
-            ret = ret Or serviceStart("wuauserv")
-
-        Case "0x8024A000"
-            ret = ret Or serviceStop("wuauserv")
-            ret = ret Or runCommand("reg add ""HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\" & _
-                "WindowsUpdate\Auto Update"" /v AUOptions /t REG_DWORD /d 2 /f") 'Set: Auto check, never donload
-            ret = ret Or serviceStart("wuauserv")
-
-        Case "0x80072F8F"
-            ret = ret Or runCommand("regsvr32 /s Mssip32.dll")
-            ret = ret Or runCommand("regsvr32 /s Initpki.dll")
-
-        Case Else
-            ret = False 'Hotfix not found
-    End Select
-
-    'Store the last applyed hotfix ID (for recursive hotfixapply check)
-    If ret Then lastTryedHotfix = hexErrNum
-
-    errorHotfixes = ret
 End Function
 
 '***********************************************************************************************************************
@@ -1077,6 +1021,84 @@ Sub getUpdateLog()
     print_debug strObjID, ">>> Windows Update logfile <<<" & vbCrLf & _
         getLineRange(strLog, intLinesBefore, intLinesNow - 1)
 End Sub
+
+
+'*********************************************************************************************************************** CLASS: cHotfixes
+'***********************************************************************************************************************
+Class cHotfixes
+    Public settings, constants
+    Dim lastTryedHotfix
+
+    Private Sub Class_Initialize
+        'Init
+        Set constants = CreateObject("Scripting.Dictionary")
+        With constants
+            .Add "", ""
+        End With
+
+        Set settings = CreateObject("Scripting.Dictionary")
+        With settings
+            .Add "", ""
+        End With
+
+        'Init the applyed hotfix list
+        lastTryedHotfix = ""
+    End Sub
+
+    Function runCommand(strCmd)
+        Dim strObjID: strObjID = "runCommand"
+
+        'Run command
+        logger.print_debug strObjID, "Run command: " & strCmd
+        Dim ret: ret = wshshell.Run(strCmd, 0, true)
+
+        'Return
+        logger.print_debug strObjID, "Return code: " & ret
+        runCommand = ret
+    End Function
+
+    Public Function errorHotfixes(errNum)'boolean :: true if we have hotfix for it
+        Dim strObjID: strObjID = "errorHotfixes"
+        Dim hexErrNum: hexErrNum = "0x" & UCase(Hex(errNum))
+
+        'Check the last applyed hotfix ID (for recursive hotfixapply check)
+        If lastTryedHotfix = hexErrNum Then
+            errorHotfixes = False
+            Exit Function
+        End If
+
+        Dim ret: ret = True
+        Select Case hexErrNum
+            Case "0x8024400D"
+                ret = ret Or serviceStop("wuauserv")
+                ret = ret Or delSubItems("C:\WINDOWS\SoftwareDistribution\DataStore")
+                ret = ret Or delSubItems("C:\Windows\SoftwareDistribution\Download")
+                ret = ret Or runCommand("reg delete ""HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\" & _
+                    "WindowsUpdate"" /v SusClientId /f")
+                ret = ret Or runCommand("reg delete ""HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\" & _
+                    "WindowsUpdate"" /v SusClientIdValidation /f")
+                ret = ret Or serviceStart("wuauserv")
+
+            Case "0x8024A000"
+                ret = ret Or serviceStop("wuauserv")
+                ret = ret Or runCommand("reg add ""HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\" & _
+                    "WindowsUpdate\Auto Update"" /v AUOptions /t REG_DWORD /d 2 /f") 'Set: Auto check, never donload
+                ret = ret Or serviceStart("wuauserv")
+
+            Case "0x80072F8F"
+                ret = ret Or runCommand("regsvr32 /s Mssip32.dll")
+                ret = ret Or runCommand("regsvr32 /s Initpki.dll")
+
+            Case Else
+                ret = False 'Hotfix not found
+        End Select
+
+        'Store the last applyed hotfix ID (for recursive hotfixapply check)
+        If ret Then lastTryedHotfix = hexErrNum
+
+        errorHotfixes = ret
+    End Function
+End Class
 
 
 '*********************************************************************************************************************** WUA main
