@@ -20,7 +20,6 @@ Const scriptVersion = "1.0.110525"
 Dim hotfixes: Set hotfixes = New cHotfixes
 Dim reporting: Set reporting = New cReporting
 Dim logger: Set logger = New cLogger
-Dim config: Set config = New cConfig
 
 Const HKEY_CURRENT_USER = &H80000001
 Const HKEY_LOCAL_MACHINE = &H80000002
@@ -163,6 +162,9 @@ Class cConfig
         End With
     End Sub
 End Class
+
+Dim config: Set config = New cConfig
+
 
 '*********************************************************************************************************************** Common functions
 '***********************************************************************************************************************
