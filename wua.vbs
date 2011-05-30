@@ -21,8 +21,6 @@ Dim hotfixes: Set hotfixes = New cHotfixes
 Dim reporting: Set reporting = New cReporting
 Dim logger: Set logger = New cLogger
 
-Const HKEY_CURRENT_USER = &H80000001
-Const HKEY_LOCAL_MACHINE = &H80000002
 Const ForReading = 1
 Const ForWriting = 2
 Const ForAppending = 8
@@ -38,18 +36,9 @@ Dim boolUpdatesInstalled, boolRebootRequired, intLinesBefore
 '***********************************************************************************************************************
 'Get instances
 Dim wshshell: Set wshshell = wscript.CreateObject("WScript.Shell")
-Dim wshsysenv: Set wshsysenv = wshshell.Environment("PROCESS")
 Dim fso: Set fso = CreateObject("Scripting.FileSystemObject")
-Dim objADInfo: Set objADInfo = CreateObject("ADSystemInfo")
 
-'Get authentication information
-Dim strDomain: strDomain = wshsysenv("userdomain")
-Dim strUser: strUser = wshsysenv("username")
-Dim strComputer: strComputer = wshshell.ExpandEnvironmentStrings("%Computername%")
-
-'Get other instances
-Dim objWMIService: Set objWMIService = GetObject("winmgmts:{impersonationLevel=impersonate}!\\" & strComputer & "\root\cimv2")
-Dim objReg: Set objReg = GetObject("winmgmts:{impersonationLevel=impersonate}!\\" & strComputer & "\root\default:StdRegProv")
+Dim windows: Set windows = New cWindows
 
 
 '*********************************************************************************************************************** User variables
@@ -65,13 +54,13 @@ Dim update_criteria: update_criteria = "IsInstalled=0 and DeploymentAction='Inst
 Dim wuaInstallerPath: wuaInstallerPath = """\\FIXME.SERVER\SHARE\WindowsUpdate\WindowsUpdateAgent30-x86.exe"""
 
 'Windows Update log file path
-Dim wuLogPath: wuLogPath = wshsysenv("WINDIR") & "\WindowsUpdate.log"
+Dim wuLogPath: wuLogPath = windows.env("WINDIR") & "\WindowsUpdate.log"
 
 'Windows Update's error description file
 Dim wuErrorlistPath: wuErrorlistPath = "wua-errorlist.csv"
 
 'Logfile path
-Dim logfilePath: logfilePath = wshsysenv("SYSTEMDRIVE") & "\" & "wua-last.log"
+Dim logfilePath: logfilePath = windows.env("SYSTEMDRIVE") & "\" & "wua-last.log"
 
 'Version number of the Windows Update agent you wish to compare installed version against.  If the version installed is
 'not equal to this version, then it will install the exe referred to in var 'wuaInstallerPath' above.
@@ -109,13 +98,6 @@ Dim boolAllowMSUpdateServer: boolAllowMSUpdateServer = False
 
 '*********************************************************************************************************************** Init
 '***********************************************************************************************************************
-'Get ComputerName
-Dim strComputer1: strComputer1 = objADInfo.ComputerName
-On Error Resume Next
-Dim strOU: strOU = "Computer OU: Not detected"
-Dim objComputer: Set objComputer = GetObject("LDAP://" & strComputer1)
-If objComputer.Parent <> "" Then strOU = "Computer OU: " & Replace(objComputer.Parent, "LDAP://", "")
-On Error GoTo 0
 
 'Open logfile
 Dim logFile: Set logFile = fso.OpenTextFile(logfilePath, ForAppending, True)
@@ -132,9 +114,9 @@ End If
 'Print data
 logger.print_debug "ScriptInit", ">>> Environment info <<<" & vbCrLf & _
     "Command: " & wscript.FullName & vbCrLf & _
-    "Computer: " & strComputer & vbCrLf & _
-    strOU & vbCrLf & _
-    "Executed by: " & strDomain & "\" & strUser
+    "Computer: " & windows.env("COMPUTERNAME") & vbCrLf & _
+    windows.getActiveDirectoryOU & vbCrLf & _
+    "Executed by: " & windows.env("USERDOMAIN") & "\" & windows.env("USERNAME")
 
 'Reset counters
 Dim statInProgress: statInProgress = 0
@@ -153,7 +135,7 @@ Class cConfig
     Private Sub Class_Initialize
         With reporting
             'Mail settings
-            .settings("mailFrom") = LCase(strComputer)
+            .settings("mailFrom") = LCase(windows.env("COMPUTERNAME"))
             .settings("mailTo") = "FIXME@EMAIL"
             .settings("mailSubject") = "WUA Script - WSUS Update log file from" 'computer name
             .settings("smtpHost") = "FIXME.SMTP.SERVER"
@@ -168,6 +150,165 @@ Dim config: Set config = New cConfig
 
 '*********************************************************************************************************************** Common functions
 '***********************************************************************************************************************
+Class cWindows
+    Public settings, constants
+    Public registry, env
+    Dim wmiService
+
+    Private Sub Class_Initialize
+        'Init
+        Set constants = CreateObject("Scripting.Dictionary")
+        With constants
+            .Add "HKEY_CURRENT_USER", &H80000001
+            .Add "HKEY_LOCAL_MACHINE", &H80000002
+        End With
+
+        'Init objects
+        Set env = wshshell.Environment("PROCESS")
+        Set registry = GetObject("winmgmts:{impersonationLevel=impersonate}!\\" & env("computername") & "\root\default:StdRegProv")
+        Set wmiService = GetObject("winmgmts:{impersonationLevel=impersonate}!\\" & env("computername") & "\root\cimv2")
+    End Sub
+
+
+    Public Function getActiveDirectoryOU()
+        Dim ret: ret = ""
+
+        'Get AD ComputerName
+        Dim adInfo: Set adInfo = CreateObject("ADSystemInfo")
+        Dim strComputer: strComputer = adInfo.ComputerName
+
+        'Try get OU from LDAP
+        On Error Resume Next
+        Dim objComputer: Set objComputer = GetObject("LDAP://" & strComputer)
+        If Not objComputer.Parent Then
+            ret = Replace(objComputer.Parent, "LDAP://", "")
+        End If
+        On Error GoTo 0
+
+        getActiveDirectoryOU = ret
+    End Function
+
+    Function run(strCmd)
+        Dim strObjID: strObjID = "runCommand"
+        Dim ret
+
+        'Run command
+        logger.print_debug strObjID, "Run command: " & strCmd
+        ret = wshshell.Run(strCmd, 0, true)
+
+        'Return
+        logger.print_debug strObjID, "Return code: " & ret
+        run = ret
+    End Function
+
+
+    '*********************************************************************************************************************** Service functions
+    '***********************************************************************************************************************
+    Public Function serviceGetState(strService)
+        Dim strObjID: strObjID = "serviceGetState"
+        Dim colServiceList, objService, ret
+        On Error Goto 0
+
+        'Filtering for service
+        Set colServiceList = wmiService.ExecQuery("Select * from Win32_Service where Name='" & strService & "'")
+        If Not colServiceList.Count = 1 Then
+            ret = "Bad results for get service: " & strService
+        Else
+            For Each objService In colServiceList
+                ret = objService.State
+            Next
+        End If
+        serviceGetState = ret
+    End Function
+
+    '***********************************************************************************************************************
+    Public Function serviceStart(strService)
+        Dim strObjID: strObjID = "serviceStart"
+        Dim colServiceList, objService, intTimeout, strState, ret
+        On Error Goto 0
+
+        'Filtering for service
+        Set colServiceList = wmiService.ExecQuery("Select * from Win32_Service where Name='" & strService & "'")
+        If Not colServiceList.Count = 1 Then
+            logger.print_debug strObjID, "Bad results for get service: " & strService
+            serviceStart = False
+            Exit Function
+        End If
+
+        'Control the result services
+        ret = True
+        intTimeout=30'sec
+        'Get Service
+        Dim errReturn
+        For Each objService In colServiceList
+            logger.print_debug strObjID, "Starting service: " & strService & " (" & objService.DisplayName & ")"
+            'Start service
+            errReturn = objService.StartService()
+            If errReturn = 0 Then
+                Do
+                    Wscript.Sleep 1000
+                    strState = serviceGetState(strService)
+                    logger.print_debug strObjID, "State (" & intTimeout & "): " & strState
+                    intTimeout = intTimeout -1
+                Loop Until strState = "Running" Or intTimeout = 0
+
+                If intTimeout = 0 Then
+                    logger.print_debug strObjID, "Starting service timeout: " & strService & " (" & objService.DisplayName & ")"
+                    ret = False
+                End If
+            Else
+                logger.print_debug strObjID, "Starting service error: " & strService & " (" & objService.DisplayName & "); " & _
+                    "return: " & errReturn
+            End If
+        Next
+
+        serviceStart = ret
+    End Function
+
+    '***********************************************************************************************************************
+    Public Function serviceStop(strService)
+        Dim strObjID: strObjID = strObjID & "serviceStop"
+        Dim colServiceList, objService, intTimeout, strState, ret
+        On Error Goto 0
+
+        'Filtering for service
+        Set colServiceList = wmiService.ExecQuery("Select * from Win32_Service where Name='" & strService & "'")
+        If Not colServiceList.Count = 1 Then
+            logger.print_debug strObjID, "Bad results for get service: " & strService
+            serviceStop = False
+            Exit Function
+        End If
+
+        'Control the result services
+        ret = True
+        intTimeout=30'sec
+        'Get Service
+        For Each objService In colServiceList
+            logger.print_debug strObjID, "Stoping service: " & strService & " (" & objService.DisplayName & ")"
+            'Stop service
+            errReturn = objService.StopService()
+            If errReturn = 0 Then
+                Do
+                    Wscript.Sleep 1000
+                    strState = serviceGetState(strService)
+                    logger.print_debug strObjID, "State (" & intTimeout & "): " & strState
+                    intTimeout = intTimeout -1
+                Loop Until strState = "Stopped" Or intTimeout = 0
+
+                If intTimeout = 0 Then
+                    logger.print_debug strObjID, "Stoping service timeout: " & strService & " (" & objService.DisplayName & ")"
+                    ret = False
+                End If
+            Else
+                logger.print_debug strObjID, "Stoping service error: " & strService & " (" & objService.DisplayName & "); " & _
+                    "return: " & errReturn
+            End If
+        Next
+
+        serviceStop = ret
+    End Function
+End Class
+
 Sub print(strMsg)
     Dim aMsg: aMsg = strMsg
     If (Right(aMsg, 2) = vbCrLf) Then aMsg = Left(strMsg, Len(strMsg) - 2)
@@ -262,113 +403,6 @@ Sub endOfScript()
     'RETURN: All ok
     exitScript 0
 End Sub
-
-
-'*********************************************************************************************************************** Service functions
-'***********************************************************************************************************************
-Function serviceGetState(strService)
-    Dim strObjID: strObjID = "serviceGetState"
-    Dim colServiceList, objService, ret
-    On Error Goto 0
-
-    'Filtering for service
-    Set colServiceList = objWMIService.ExecQuery("Select * from Win32_Service where Name='" & strService & "'")
-    If Not colServiceList.Count = 1 Then
-        ret = "Bad results for get service: " & strService
-    Else
-        For Each objService In colServiceList
-            ret = objService.State
-        Next
-    End If
-    serviceGetState = ret
-End Function
-
-'***********************************************************************************************************************
-Function serviceStart(strService)
-    Dim strObjID: strObjID = "serviceStart"
-    Dim colServiceList, objService, intTimeout, strState, ret
-    On Error Goto 0
-
-    'Filtering for service
-    Set colServiceList = objWMIService.ExecQuery("Select * from Win32_Service where Name='" & strService & "'")
-    If Not colServiceList.Count = 1 Then
-        logger.print_debug strObjID, "Bad results for get service: " & strService
-        serviceStart = False
-        Exit Function
-    End If
-
-    'Control the result services
-    ret = True
-    intTimeout=30'sec
-    'Get Service
-    Dim errReturn
-    For Each objService In colServiceList
-        logger.print_debug strObjID, "Starting service: " & strService & " (" & objService.DisplayName & ")"
-        'Start service
-        errReturn = objService.StartService()
-        If errReturn = 0 Then
-            Do
-                Wscript.Sleep 1000
-                strState = serviceGetState(strService)
-                logger.print_debug strObjID, "State (" & intTimeout & "): " & strState
-                intTimeout = intTimeout -1
-            Loop Until strState = "Running" Or intTimeout = 0
-
-            If intTimeout = 0 Then
-                logger.print_debug strObjID, "Starting service timeout: " & strService & " (" & objService.DisplayName & ")"
-                ret = False
-            End If
-        Else
-            logger.print_debug strObjID, "Starting service error: " & strService & " (" & objService.DisplayName & "); " & _
-                "return: " & errReturn
-        End If
-    Next
-
-    serviceStart = ret
-End Function
-
-'***********************************************************************************************************************
-Function serviceStop(strService)
-    Dim strObjID: strObjID = strObjID & "serviceStop"
-    Dim colServiceList, objService, intTimeout, strState, ret
-    On Error Goto 0
-
-    'Filtering for service
-    Set colServiceList = objWMIService.ExecQuery("Select * from Win32_Service where Name='" & strService & "'")
-    If Not colServiceList.Count = 1 Then
-        logger.print_debug strObjID, "Bad results for get service: " & strService
-        serviceStop = False
-        Exit Function
-    End If
-
-    'Control the result services
-    ret = True
-    intTimeout=30'sec
-    'Get Service
-    For Each objService In colServiceList
-        logger.print_debug strObjID, "Stoping service: " & strService & " (" & objService.DisplayName & ")"
-        'Stop service
-        errReturn = objService.StopService()
-        If errReturn = 0 Then
-            Do
-                Wscript.Sleep 1000
-                strState = serviceGetState(strService)
-                logger.print_debug strObjID, "State (" & intTimeout & "): " & strState
-                intTimeout = intTimeout -1
-            Loop Until strState = "Stopped" Or intTimeout = 0
-
-            If intTimeout = 0 Then
-                logger.print_debug strObjID, "Stoping service timeout: " & strService & " (" & objService.DisplayName & ")"
-                ret = False
-            End If
-        Else
-            logger.print_debug strObjID, "Stoping service error: " & strService & " (" & objService.DisplayName & "); " & _
-                "return: " & errReturn
-        End If
-    Next
-
-    serviceStop = ret
-End Function
 
 
 '*********************************************************************************************************************** FS functions
@@ -608,10 +642,9 @@ Class cReporting
                 logger.print_debug strObjID, "No updates required, no pending reboot, therefore not sending email"
             Else
                 If boolFullDNSName Then
-                    StrDomainName = wshshell.ExpandEnvironmentStrings("%USERDNSDOMAIN%")
-                    settings("mailSubject") = settings("mailSubject") & " " & strComputer & "." & StrDomainName
+                    settings("mailSubject") = settings("mailSubject") & " " & windows.env("COMPUTERNAME") & "." & windows.env("USERDOMAIN")
                 Else
-                    settings("mailSubject") = settings("mailSubject") & " " & strComputer
+                    settings("mailSubject") = settings("mailSubject") & " " & windows.env("COMPUTERNAME")
                 End If
                 If Not settings("smtpHost") = "" Then
                     reporting.sendMail
@@ -629,7 +662,7 @@ Function chkAgentVer()
     Dim en, ed
 
     'Check Service State
-    If Not serviceStart("wuauserv") Then
+    If Not windows.serviceStart("wuauserv") Then
         en = 0: ed = "Can't start the 'wuauserv' service"
         commonErrorHandler strObjID, en, ed, True
     End If
@@ -654,7 +687,7 @@ Function chkAgentVer()
         logger.print_debug strObjID, "File version (" & updateinfo & ") does not match, WUA udapte required."
 
         'stop the Automatic Updates service
-        If Not serviceStop("wuauserv") Then
+        If Not windows.serviceStop("wuauserv") Then
             en = 0: ed = "Can't stop the 'wuauserv' service"
             commonErrorHandler strObjID, en, ed, True
         End If
@@ -690,8 +723,7 @@ Function chkAgentSets()
     'Server
     Dim strKeyPath: strKeyPath = "SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate"
     Dim strValueName: strValueName = "WUServer"
-    Dim regWSUSServer
-    objReg.GetStringValue HKEY_LOCAL_MACHINE, strKeyPath, strValueName, regWSUSServer
+    Dim regWSUSServer: windows.registry.GetStringValue windows.constants("HKEY_LOCAL_MACHINE"), strKeyPath, strValueName, regWSUSServer
     If IsNull(regWSUSServer) Or Trim(regWSUSServer) = "" Then
         regWSUSServer = "MS Update Server via Internet"
         willUseMSUpdateServer = True
@@ -751,7 +783,7 @@ Function chkAgentSet_getTargetGroup(strKeyPath)
     Dim strValueName: strValueName = "TargetGroup"
     Dim ret: ret = "Not specified"
 
-    objReg.GetStringValue HKEY_LOCAL_MACHINE, strKeyPath, strValueName, regTargetGroup
+    windows.registry.GetStringValue windows.constants("HKEY_LOCAL_MACHINE"), strKeyPath, strValueName, regTargetGroup
     If regTargetGroup <> "" And Not IsNull(regTargetGroup) Then ret = regTargetGroup
     chkAgentSet_getTargetGroup = ret
 End Function
@@ -1085,18 +1117,6 @@ Class cHotfixes
         lastTryedHotfix = ""
     End Sub
 
-    Function runCommand(strCmd)
-        Dim strObjID: strObjID = "runCommand"
-
-        'Run command
-        logger.print_debug strObjID, "Run command: " & strCmd
-        Dim ret: ret = wshshell.Run(strCmd, 0, true)
-
-        'Return
-        logger.print_debug strObjID, "Return code: " & ret
-        runCommand = ret
-    End Function
-
     Public Function errorHotfixes(errNum)'boolean :: true if we have hotfix for it
         Dim strObjID: strObjID = "errorHotfixes"
         Dim hexErrNum: hexErrNum = "0x" & UCase(Hex(errNum))
@@ -1110,24 +1130,24 @@ Class cHotfixes
         Dim ret: ret = True
         Select Case hexErrNum
             Case "0x8024400D"
-                ret = ret Or serviceStop("wuauserv")
+                ret = ret Or windows.serviceStop("wuauserv")
                 ret = ret Or delSubItems("C:\WINDOWS\SoftwareDistribution\DataStore")
                 ret = ret Or delSubItems("C:\Windows\SoftwareDistribution\Download")
-                ret = ret Or runCommand("reg delete ""HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\" & _
+                ret = ret Or windows.run("reg delete ""HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\" & _
                     "WindowsUpdate"" /v SusClientId /f")
-                ret = ret Or runCommand("reg delete ""HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\" & _
+                ret = ret Or windows.run("reg delete ""HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\" & _
                     "WindowsUpdate"" /v SusClientIdValidation /f")
-                ret = ret Or serviceStart("wuauserv")
+                ret = ret Or windows.serviceStart("wuauserv")
 
             Case "0x8024A000"
-                ret = ret Or serviceStop("wuauserv")
-                ret = ret Or runCommand("reg add ""HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\" & _
+                ret = ret Or windows.serviceStop("wuauserv")
+                ret = ret Or windows.run("reg add ""HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\" & _
                     "WindowsUpdate\Auto Update"" /v AUOptions /t REG_DWORD /d 2 /f") 'Set: Auto check, never donload
-                ret = ret Or serviceStart("wuauserv")
+                ret = ret Or windows.serviceStart("wuauserv")
 
             Case "0x80072F8F"
-                ret = ret Or runCommand("regsvr32 /s Mssip32.dll")
-                ret = ret Or runCommand("regsvr32 /s Initpki.dll")
+                ret = ret Or windows.run("regsvr32 /s Mssip32.dll")
+                ret = ret Or windows.run("regsvr32 /s Initpki.dll")
 
             Case Else
                 ret = False 'Hotfix not found
