@@ -858,6 +858,7 @@ Function wuaErrorHandler(strObjID, errNum, errDesc, ifUnhandledBeFatal)' Boolean
     Dim en, ed
 
     'Check fatal
+    Dim boolFatal
     Select Case "0x" & UCase(Hex(errNum))
         Case "0x80072F78", "0x80072EFD", "0x8024002B", "0x7", "0x8024400D", "0x8024A000", "0x80072F8F"
             boolFatal = True
