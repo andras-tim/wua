@@ -39,36 +39,11 @@ Dim wshshell: Set wshshell = wscript.CreateObject("WScript.Shell")
 Dim fso: Set fso = CreateObject("Scripting.FileSystemObject")
 
 Dim windows: Set windows = New cWindows
+Dim updater: Set updater = New cUpdater
 
 
 '*********************************************************************************************************************** User variables
 '***********************************************************************************************************************
-'Updates filter for updating
-'Dim update_criteria: update_criteria = "IsAssigned=1 and IsHidden=0 and IsInstalled=0 and Type='Software' or Type='Driver'"
-Dim update_criteria: update_criteria = "IsInstalled=0 and DeploymentAction='Installation' or " & _
-    "IsPresent=1 and DeploymentAction='Uninstallation' or " & _
-    "IsInstalled=1 and DeploymentAction='Installation' and RebootRequired=1 or " & _
-    "IsInstalled=0 and DeploymentAction='Uninstallation' and RebootRequired=1"
-
-'Full EXE path to Windows Update Agent installation exe. It will install it slently if the PC needs it
-Dim wuaInstallerPath: wuaInstallerPath = """\\FIXME.SERVER\SHARE\WindowsUpdate\WindowsUpdateAgent30-x86.exe"""
-
-'Windows Update log file path
-Dim wuLogPath: wuLogPath = windows.env("WINDIR") & "\WindowsUpdate.log"
-
-'Windows Update's error description file
-Dim wuErrorlistPath: wuErrorlistPath = "wua-errorlist.csv"
-
-'Logfile path
-Dim logfilePath: logfilePath = windows.env("SYSTEMDRIVE") & "\" & "wua-last.log"
-
-'Version number of the Windows Update agent you wish to compare installed version against.  If the version installed is
-'not equal to this version, then it will install the exe referred to in var 'wuaInstallerPath' above.
-'   * version 2.0 SP1 is 5.8.0.2469
-'   * version 3.0     is 7.0.6000.374
-Dim strWUAgentVersion: strWUAgentVersion = "7.0.6000.374"
-Dim strLocaleVerDelim: strLocaleVerDelim = "."
-
 'Turns email function on/off.
 ' False = off, don't email
 ' True = on, email using default address defined in the var reporting.settings.Item("mailTo") above.
@@ -94,6 +69,8 @@ Dim iTimeFormat: iTimeFormat = 4
 ' False = abort script, when the Agent try to use MS Update Server
 ' True = allow MS Update Server as sources of updates
 Dim boolAllowMSUpdateServer: boolAllowMSUpdateServer = False
+
+Dim logfilePath: logfilePath = windows.env("SYSTEMDRIVE") & "\" & "wua-last.log"
 
 
 '*********************************************************************************************************************** Init
@@ -141,6 +118,17 @@ Class cConfig
             .settings("smtpHost") = "FIXME.SMTP.SERVER"
             'set your SMTP server authentication type. Possible values:CDOANONYMOUS|CDOBASIC|CDONTLM
             '.settings("smtpAuthType") = "CDOANONYMOUS"
+        End With
+        With updater
+            'Updates filter for updating
+            '.settings("update_criteria") = "IsAssigned=1 and IsHidden=0 and IsInstalled=0 and Type='Software' or Type='Driver'"
+            .settings("update_criteria") = "IsInstalled=0 and DeploymentAction='Installation' or " & _
+                "IsPresent=1 and DeploymentAction='Uninstallation' or " & _
+                "IsInstalled=1 and DeploymentAction='Installation' and RebootRequired=1 or " & _
+                "IsInstalled=0 and DeploymentAction='Uninstallation' and RebootRequired=1"
+
+            'Full EXE path to Windows Update Agent installation exe. It will install it slently if the PC needs it
+            .settings("wuaInstallerPath") = """\\FIXME.SERVER\SHARE\WindowsUpdate\WindowsUpdateAgent30-x86.exe"""
         End With
     End Sub
 End Class
@@ -283,6 +271,7 @@ Class cWindows
         ret = True
         intTimeout=30'sec
         'Get Service
+        Dim errReturn
         For Each objService In colServiceList
             logger.print_debug strObjID, "Stoping service: " & strService & " (" & objService.DisplayName & ")"
             'Stop service
@@ -655,63 +644,90 @@ Class cReporting
 End Class
 
 
-'*********************************************************************************************************************** WUA functions
+'*********************************************************************************************************************** CLASS: cUpdater
 '***********************************************************************************************************************
-Function chkAgentVer()
-    Dim strObjID: strObjID = "chkAgentVer"
-    Dim en, ed
+Class cUpdater
+    Public settings, constants
 
-    'Check Service State
-    If Not windows.serviceStart("wuauserv") Then
-        en = 0: ed = "Can't start the 'wuauserv' service"
-        commonErrorHandler strObjID, en, ed, True
-    End If
+    Private Sub Class_Initialize
+        'Init
+        Set constants = CreateObject("Scripting.Dictionary")
+        With constants
+            .Add "", ""
+        End With
 
-    On Error Resume Next
-    Dim bUpdateNeeded: bUpdateNeeded = True ' init value
-    logger.print_debug strObjID, "Checking version of Windows Update agent against version " & strWUAgentVersion & "..."
-    Set updateAgentSession = CreateObject("Microsoft.Update.AgentInfo")
-    If Err.Number = 0 Then
-        updateinfo = updateAgentSession.GetInfo("ProductVersionString")
-        If Replace(updateinfo, strLocaleVerDelim, "") = Replace(strWUAgentVersion, strLocaleVerDelim, "") Then
-            bUpdateNeeded = False
-        ElseIf updateinfo > strWUAgentVersion Then
-            logger.print_debug strObjID, "Your installed version of the Windows Update Agent (" & updateinfo & ") is " & _
-                "newer than the referenced version (" & strWUAgentVersion & ")."
-            bUpdateNeeded = False
-        End If
-    End If
-    On Error Goto 0
+        Set settings = CreateObject("Scripting.Dictionary")
+        With settings
+            .Add "update_criteria", "IsInstalled=0 and DeploymentAction='Installation' or " & _
+                "IsPresent=1 and DeploymentAction='Uninstallation' or " & _
+                "IsInstalled=1 and DeploymentAction='Installation' and RebootRequired=1 or " & _
+                "IsInstalled=0 and DeploymentAction='Uninstallation' and RebootRequired=1"
+            .Add "wuaInstallerPath", ""
+            .Add "wuLogPath", windows.env("WINDIR") & "\WindowsUpdate.log"
+            .Add "wuErrorlistPath", "wua-errorlist.csv"
+            .Add "wuAgentVer", "7.0.6000.374"
+            .Add "wuAgentVerDelim", "."
+        End With
+    End Sub
 
-    If bUpdateNeeded Then
-        logger.print_debug strObjID, "File version (" & updateinfo & ") does not match, WUA udapte required."
 
-        'stop the Automatic Updates service
-        If Not windows.serviceStop("wuauserv") Then
-            en = 0: ed = "Can't stop the 'wuauserv' service"
+    Function chkAgentVer()
+        Dim strObjID: strObjID = "chkAgentVer"
+        Dim en, ed
+
+        'Check Service State
+        If Not windows.serviceStart("wuauserv") Then
+            en = 0: ed = "Can't start the 'wuauserv' service"
             commonErrorHandler strObjID, en, ed, True
         End If
 
-        'Install the newer WUA
         On Error Resume Next
-        Set oEnv = wshshell.Environment("PROCESS")
-        oEnv("SEE_MASK_NOZONECHECKS") = 1
-        rCmd = wuaInstallerPath & " /quiet /norestart"
-        WriteLog ("Attempting to install WUA: " & rCmd)
-        wshshell.Run rCmd, 1, True
-
-        'Error handles
-        If Err.Number <> 0 Then
-            en = Err.Number: ed = "Error executing '" & wuaInstallerPath & "' Agent EXE (" & Err.Description & ")"
-            On Error GoTo 0
-            commonErrorHandler strObjID, en, ed, False
+        Dim bUpdateNeeded: bUpdateNeeded = True ' init value
+        logger.print_debug strObjID, "Checking version of Windows Update agent against version " & settings("wuAgentVer") & "..."
+        Set updateAgentSession = CreateObject("Microsoft.Update.AgentInfo")
+        If Err.Number = 0 Then
+            Dim updateinfo: updateinfo = updateAgentSession.GetInfo("ProductVersionString")
+            If Replace(updateinfo, settings("wuAgentVerDelim"), "") = Replace(settings("wuAgentVer"), settings("wuAgentVerDelim"), "") Then
+                bUpdateNeeded = False
+            ElseIf updateinfo > settings("wuAgentVer") Then
+                logger.print_debug strObjID, "Your installed version of the Windows Update Agent (" & updateinfo & ") is " & _
+                    "newer than the referenced version (" & settings("wuAgentVer") & ")."
+                bUpdateNeeded = False
+            End If
         End If
-        On Error GoTo 0
-    End If
+        On Error Goto 0
 
-    'All OK
-    chkAgentVer = True
-End Function
+        If bUpdateNeeded Then
+            logger.print_debug strObjID, "File version (" & updateinfo & ") does not match, WUA udapte required."
+
+            'stop the Automatic Updates service
+            If Not windows.serviceStop("wuauserv") Then
+                en = 0: ed = "Can't stop the 'wuauserv' service"
+                commonErrorHandler strObjID, en, ed, True
+            End If
+
+            'Install the newer WUA
+            On Error Resume Next
+            windows.env("SEE_MASK_NOZONECHECKS") = 1
+            'TODO: >>>>>>>>>>>>>>>>>>>>>>>>>>
+            rCmd = settings("wuaInstallerPath") & " /quiet /norestart"
+            WriteLog ("Attempting to install WUA: " & rCmd)
+            wshshell.Run rCmd, 1, True
+
+            'Error handles
+            If Err.Number <> 0 Then
+                en = Err.Number: ed = "Error executing '" & settings("wuaInstallerPath") & "' Agent EXE (" & Err.Description & ")"
+                On Error GoTo 0
+                commonErrorHandler strObjID, en, ed, False
+            End If
+            On Error GoTo 0
+        End If
+
+        'All OK
+        chkAgentVer = True
+    End Function
+End Class
+
 
 '***********************************************************************************************************************
 Function chkAgentSets()
@@ -812,8 +828,8 @@ Function updateSearcher()
     Set updateAgentSession = CreateObject("Microsoft.Update.Session")
     Set updateSearcher = updateAgentSession.CreateupdateSearcher()
 
-    logger.print_debug strObjID, "Filtering updates: " & update_criteria
-    Set searchResult = updateSearcher.Search(update_criteria)
+    logger.print_debug strObjID, "Filtering updates: " & updater.settings("update_criteria")
+    Set searchResult = updateSearcher.Search(updater.settings("update_criteria"))
 
     'Handle some common errors here
     If Err.Number <> 0 Then
@@ -837,7 +853,7 @@ Function wuaGetErrorDescription(errNum)' Array :: [""] if we don't know descript
 
     'Init errorlist
     If wuErrorlist = "" Then
-        wuErrorlist = getFileToText(wuErrorlistPath)
+        wuErrorlist = getFileToText(updater.settings("wuErrorlistPath"))
     End If
 
     'Exist errorlist
@@ -1071,7 +1087,7 @@ End Function
 Sub initUpdateLog()
     Dim strObjID: strObjID = "initUpdateLog"
 
-    Dim strLog: strLog = getFileToText(wuLogPath)
+    Dim strLog: strLog = getFileToText(updater.settings("wuLogPath"))
     'Exist logfile
     If strLog <> "" Then
         intLinesBefore = getLineNumber(strLog)
@@ -1085,7 +1101,7 @@ Sub getUpdateLog()
     Dim strObjID: strObjID = "getUpdateLog"
 
     'Read update logs
-    Dim strLog: strLog = getFileToText(wuLogPath)
+    Dim strLog: strLog = getFileToText(updater.settings("wuLogPath"))
     'Exist logfile
     If strLog = "" Then Exit Sub
     Dim intLinesNow: intLinesNow = getLineNumber(strLog)
