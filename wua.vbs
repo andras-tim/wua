@@ -760,8 +760,9 @@ Function wuaGetErrorDescription(errNum)' Array :: [""] if we don't know descript
 
     'Exist errorlist
     If Not wuErrorlist = "" Then
-        txt = findLine(wuErrorlist, vbCrLf & hexErrNum & vbTab)
+        Dim txt: txt = findLine(wuErrorlist, vbCrLf & hexErrNum & vbTab)
         If Not txt = "" Then
+            Dim arr
             arr = Split(Right(txt, Len(txt) - 2), vbTab)
             ReDim Preserve arr(2)
             ret = Array(arr(1), arr(2))
@@ -776,6 +777,7 @@ Function wuaErrorHandler(strObjID, errNum, errDesc, ifUnhandledBeFatal)' Boolean
     Dim en, ed
 
     'Check fatal
+    Dim boolFatal
     Select Case "0x" & UCase(Hex(errNum))
         Case "0x80072F78", "0x80072EFD", "0x8024002B", "0x7", "0x8024400D", "0x8024A000", "0x80072F8F"
             boolFatal = True
