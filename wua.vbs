@@ -121,7 +121,7 @@ Dim boolEmailIfAllOK: boolEmailIfAllOK = False
 ' 0 = vbGeneralDate - Default. Returns time: hh:mm:ss PM/AM.
 ' 3 = vbLongTime - Returns time: hh:mm:ss PM/AM
 ' 4 = vbShortTime - Return time: hh:mm
-Dim iTimeFormat: iTimeFormat = 4
+Dim iTimeFormat: iTimeFormat = 3
 
 'Allow MS Update Server via Internet
 ' False = abort script, when the Agent try to use MS Update Server
