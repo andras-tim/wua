@@ -82,6 +82,9 @@ Dim wuLogPath: wuLogPath = wshsysenv("WINDIR") & "\WindowsUpdate.log"
 'Windows Update's error description file
 Dim wuErrorlistPath: wuErrorlistPath = "wua-errorlist.csv"
 
+'WUA Script's backlist file
+Dim wuBlacklistPath: wuBlacklistPath = "wua-blacklist.csv"
+
 'Logfile path
 Dim logfilePath: logfilePath = wshsysenv("SYSTEMDRIVE") & "\" & "wua-last.log"
 
@@ -169,6 +172,9 @@ Dim lastTryedHotfix: lastTryedHotfix = ""
 
 'Init Windows Update's errorlist
 Dim wuErrorlist: wuErrorlist = ""
+
+'Init WUA Script's backlist
+Dim wuBlacklist: wuBlacklist = ""
 
 
 '*********************************************************************************************************************** Common functions
@@ -774,6 +780,29 @@ Function wuaGetErrorDescription(errNum)' Array :: [""] if we don't know descript
 End Function
 
 '***********************************************************************************************************************
+Function wuaUseableUpdate(lstKBArticleIDs)' Boolean :: true=Useable update; false=Blacklisted update
+    Dim ret: ret = True
+
+    'Init blacklist
+    If wuBlacklist = "" Then
+        wuBlacklist = vbCrLf & getFileToText(wuBlacklistPath)
+    End If
+
+    'Exist blacklist
+    If Not wuBlacklist = "" And Not wuBlacklist = vbCrLf Then
+        Dim strKBA
+        For Each strKBA in lstKBArticleIDs
+            If Not findLine(wuBlacklist, vbCrLf & strFQDN & vbTab & UCase(strKBA)) = "" Then
+                ret = False
+                Exit For
+            End If
+        Next
+    End If
+
+    wuaUseableUpdate = ret
+End Function
+
+'***********************************************************************************************************************
 Function wuaErrorHandler(strObjID, errNum, errDesc, ifUnhandledBeFatal)' Boolean :: true=all ok; false=check
     Dim en, ed
 
@@ -925,8 +954,10 @@ Function dwlUpdates()
     Dim updatesToDownload: Set updatesToDownload = CreateObject("Microsoft.Update.UpdateColl")
     Dim i: For i = 0 To searchResult.updates.Count - 1
         Dim Update: Set Update = searchResult.updates.Item(i)
-        If Not Update.EulaAccepted Then Update.AcceptEula
-        updatesToDownload.Add Update
+        If wuaUseableUpdate(Update.KBArticleIDs) Then
+            If Not Update.EulaAccepted Then Update.AcceptEula
+            updatesToDownload.Add Update
+        End If
     Next
 
     'DOWNLOADING
@@ -959,7 +990,9 @@ Function instUpdates()
     Dim Update
     For i = 0 To searchResult.updates.Count - 1
         Set Update = searchResult.updates.Item(i)
-        If Update.IsDownloaded Then updatesToInstall.Add Update
+        If wuaUseableUpdate(Update.KBArticleIDs) Then
+            If Update.IsDownloaded Then updatesToInstall.Add Update
+        End If
     Next
 
     'INSTALLER INIT
