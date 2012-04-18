@@ -31,6 +31,7 @@ Const cdoSendUsingPort = 2
 Const cdoSMTPServer = "http://schemas.microsoft.com/cdo/configuration/smtpserver"
 Const cdoSMTPServerport = "http://schemas.microsoft.com/cdo/configuration/smtpserverport"
 Const cdoSMTPconnectiontimeout = "http://schemas.microsoft.com/cdo/configuration/Connectiontimeout"
+Const regTCPIP = "HKLM\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\"
 
 'Public Objects
 Dim updateAgentSession, autoUpdateClient, searchResult
@@ -50,11 +51,13 @@ Dim objADInfo: Set objADInfo = CreateObject("ADSystemInfo")
 'Get authentication information
 Dim strDomain: strDomain = wshsysenv("userdomain")
 Dim strUser: strUser = wshsysenv("username")
-Dim strComputer: strComputer = wshshell.ExpandEnvironmentStrings("%Computername%")
+Dim strComputer: strComputer = LCase(WSHShell.RegRead (regTCPIP & "Hostname"))
+Dim strDomainName: strDomainName = LCase(WSHShell.RegRead (regTCPIP & "Domain"))
+Dim strFQDN: strFQDN = strComputer & "." & strDomainName
 
 'Get other instances
-Dim objWMIService: Set objWMIService = GetObject("winmgmts:{impersonationLevel=impersonate}!\\" & strComputer & "\root\cimv2")
-Dim objReg: Set objReg = GetObject("winmgmts:{impersonationLevel=impersonate}!\\" & strComputer & "\root\default:StdRegProv")
+Dim objWMIService: Set objWMIService = GetObject("winmgmts:{impersonationLevel=impersonate}!\\.\root\cimv2")
+Dim objReg: Set objReg = GetObject("winmgmts:{impersonationLevel=impersonate}!\\.\root\default:StdRegProv")
 
 
 '*********************************************************************************************************************** User variables
@@ -107,11 +110,6 @@ Dim boolEmailReportEnabled: boolEmailReportEnabled = True
 ' True = on always send email
 Dim boolEmailIfAllOK: boolEmailIfAllOK = False
 
-'boolFullDNSName Determines if the email subject contains the full dns name of the server or just the computer name.
-' False = off, just use computer name
-' True = on,  use full dns name
-Dim boolFullDNSName: boolFullDNSName = False
-
 'Timestamp format in log
 ' 0 = vbGeneralDate - Default. Returns time: hh:mm:ss PM/AM.
 ' 3 = vbLongTime - Returns time: hh:mm:ss PM/AM
@@ -129,9 +127,9 @@ Dim boolAllowMSUpdateServer: boolAllowMSUpdateServer = False
 'Get ComputerName
 Dim strComputer1: strComputer1 = objADInfo.ComputerName
 On Error Resume Next
-Dim strOU: strOU = "Computer OU: Not detected"
+Dim strOU: strOU = "n/a"
 Dim objComputer: Set objComputer = GetObject("LDAP://" & strComputer1)
-If objComputer.Parent <> "" Then strOU = "Computer OU: " & Replace(objComputer.Parent, "LDAP://", "")
+If objComputer.Parent <> "" Then strOU = Replace(objComputer.Parent, "LDAP://", "")
 On Error GoTo 0
 
 'Open logfile
@@ -146,11 +144,10 @@ If Not boolCScript Then
     print_debug "ScriptInit", "WARNING: Use the ""cscript.exe //nologo"" command console output"
 End If
 
-'Print data
 print_debug "ScriptInit", ">>> Environment info <<<" & vbCrLf & _
     "Command: " & wscript.FullName & vbCrLf & _
-    "Computer: " & strComputer & vbCrLf & _
-    strOU & vbCrLf & _
+    "Computer: " & strFQDN & vbCrLf & _
+    "Computer OU: " & strOU & vbCrLf & _
     "Executed by: " & strDomain & "\" & strUser
 
 'Reset counters
@@ -1039,14 +1036,7 @@ Sub sendReport()
             print_debug strObjID, "No updates required, no pending reboot, therefore not sending email"
         Else
             If Not strMail_smtpHost = "" Then
-                Dim strOutputComputerName
-                If boolFullDNSName Then
-                    StrDomainName = wshshell.ExpandEnvironmentStrings("%USERDNSDOMAIN%")
-                    strOutputComputerName = strComputer & "." & StrDomainName
-                Else
-                    strOutputComputerName = strComputer
-                End If
-                sendMail strMail_from, strMail_to, strMail_subject & " " & strOutputComputerName
+                sendMail strMail_from, strMail_to, strMail_subject & " " & strFQDN
             End If
         End If
     End If
