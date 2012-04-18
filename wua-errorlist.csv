@@ -1,3 +1,6 @@
+# WUA Errorlist
+#
+# Error ID      Description
 0x00000001	ERROR_INVALID_FUNCTION
 0x0000007B	Error_Invalid_Name	The filename, directory name,or volume label syntax is incorrect
 0x00000275	Error_cant_enable_Deny_only	A group marked use for deny only can not be enabled
