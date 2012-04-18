@@ -128,6 +128,9 @@ Dim iTimeFormat: iTimeFormat = 3
 ' True = allow MS Update Server as sources of updates
 Dim boolAllowMSUpdateServer: boolAllowMSUpdateServer = False
 
+'Minimum free space on system drive in MB
+' 0 = It will not check
+Dim iMinFreeSpace: iMinFreeSpace = 1024 * 1.5
 
 '*********************************************************************************************************************** Init
 '***********************************************************************************************************************
@@ -150,12 +153,23 @@ Dim boolCScript: boolCScript = (InStr(UCase(wscript.FullName), "\CSCRIPT.EXE") >
 If Not boolCScript Then
     print_debug "ScriptInit", "WARNING: Use the ""cscript.exe //nologo"" command console output"
 End If
+Dim iFreeSpace: iFreeSpace = getDriveFreeSpace(wshsysenv("SYSTEMDRIVE"))
 
 print_debug "ScriptInit", ">>> Environment info <<<" & vbCrLf & _
-    "Command: " & wscript.FullName & vbCrLf & _
-    "Computer: " & strFQDN & " (" & strArchitecture & ")" & vbCrLf & _
-    "Computer OU: " & strOU & vbCrLf & _
-    "Executed by: " & strDomain & "\" & strUser
+    "Interpreter:     " & wscript.FullName & vbCrLf & _
+    "Computer:        " & strFQDN & " (" & strArchitecture & ")" & vbCrLf & _
+    "Computer OU:     " & strOU & vbCrLf & _
+    "Executed by:     " & strDomain & "\" & strUser & vbCrLf & _
+    "Free diskspace:  " & CInt(iFreeSpace / 10.24) / 100 & " Gb"
+
+'Check free space on System drive
+If iMinFreeSpace > 0 Then
+    If iFreeSpace < iMinFreeSpace Then
+        Dim en, ed
+        en = 0: ed = "ERROR: The free space on system drive is not enough for a neccesary update! (required minimun " & CInt(iMinFreeSpace / 10.24) / 100 & " Gb free space)"
+        commonErrorHandler "ScriptInit", en, ed, True
+    End If
+End If
 
 'Reset counters
 Dim statInProgress: statInProgress = 0
@@ -530,6 +544,11 @@ Function getFileToText(fn)
     getFileToText = ret
 End Function
 
+'***********************************************************************************************************************
+Function getDriveFreeSpace(strDriveLetter)' Integer :: Free spaces of requested drive
+    Dim lngFreeSpaceInBite: lngFreeSpaceInBite = fso.GetDrive(Left(strDriveLetter, 1)).FreeSpace
+    getDriveFreeSpace = CInt(lngFreeSpaceInBite / 1024 / 1024)
+End Function
 
 '*********************************************************************************************************************** Run functions
 '***********************************************************************************************************************
