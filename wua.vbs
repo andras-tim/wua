@@ -59,6 +59,10 @@ Dim strFQDN: strFQDN = strComputer & "." & strDomainName
 Dim objWMIService: Set objWMIService = GetObject("winmgmts:{impersonationLevel=impersonate}!\\.\root\cimv2")
 Dim objReg: Set objReg = GetObject("winmgmts:{impersonationLevel=impersonate}!\\.\root\default:StdRegProv")
 
+'Get architecture
+Dim strArchitecture: strArchitecture = wshsysenv("PROCESSOR_ARCHITECTURE")
+if (strArchitecture = "AMD64") Then strArchitecture = "x64"
+
 
 '*********************************************************************************************************************** User variables
 '***********************************************************************************************************************
@@ -70,7 +74,7 @@ Dim update_criteria: update_criteria = "IsInstalled=0 and DeploymentAction='Inst
     "IsInstalled=0 and DeploymentAction='Uninstallation' and RebootRequired=1"
 
 'Full EXE path to Windows Update Agent installation exe. It will install it slently if the PC needs it
-Dim wuaInstallerPath: wuaInstallerPath = """\\FIXME.SERVER\SHARE\WindowsUpdate\WindowsUpdateAgent30-x86.exe"""
+Dim wuaInstallerPath: wuaInstallerPath = """\\FIXME.SERVER\SHARE\WindowsUpdate\WindowsUpdateAgent30-" & strArchitecture & ".exe"""
 
 'Windows Update log file path
 Dim wuLogPath: wuLogPath = wshsysenv("WINDIR") & "\WindowsUpdate.log"
@@ -146,7 +150,7 @@ End If
 
 print_debug "ScriptInit", ">>> Environment info <<<" & vbCrLf & _
     "Command: " & wscript.FullName & vbCrLf & _
-    "Computer: " & strFQDN & vbCrLf & _
+    "Computer: " & strFQDN & " (" & strArchitecture & ")" & vbCrLf & _
     "Computer OU: " & strOU & vbCrLf & _
     "Executed by: " & strDomain & "\" & strUser
 
