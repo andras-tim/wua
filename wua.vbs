@@ -729,6 +729,27 @@ Function chkAgentSet_getretWUAmode()
 End Function
 
 '***********************************************************************************************************************
+Function getUpdateDetails(Update)
+    Dim strMsrcSeverity: strMsrcSeverity = "n/a"
+    If Not Update.MsrcSeverity = "" Then
+        strMsrcSeverity = Update.MsrcSeverity
+    End If
+
+    Dim strBlacklisted: strBlacklisted = ""
+    If Not wuaUseableUpdate(Update.KBArticleIDs) Then
+        strBlacklisted = " [Blacklisted]"
+    End If
+
+    getUpdateDetails = Update.Title & strBlacklisted & vbCrLf & _
+                       vbTab & "MSRC Severity:    " & strMsrcSeverity & vbCrLf & _
+                       vbTab & "Beta:             " & Update.IsBeta & vbCrLf & _
+                       vbTab & "Uninstallable:    " & Update.IsUninstallable & vbCrLf & _
+                       vbTab & "Recommended CPU:  " & Update.RecommendedCpuSpeed & " MHz" & vbCrLf & _
+                       vbTab & "Recommended HDD:  " & Update.RecommendedHardDiskSpace & " MB" & vbCrLf & _
+                       vbTab & "Recommended RAM:  " & Update.RecommendedMemory & " MB" & vbCrLf
+End Function
+
+'***********************************************************************************************************************
 Function updateSearcher()
     Dim strObjID: strObjID = "updateSearcher"
     Dim en, ed
@@ -936,9 +957,9 @@ Function detectNow()
     Dim strUpdates: strUpdates = ""
     Dim i: For i = 0 To searchResult.updates.Count - 1
         Dim Update: Set Update = searchResult.updates.Item(i)
-        strUpdates = strUpdates & Update.Title & vbCrLf
+        strUpdates = strUpdates & getUpdateDetails(Update)
     Next
-    print_debug strObjID, ">>> Required updates (" & searchResult.updates.Count & ") <<< " & vbCrLf & strUpdates
+    print_debug strObjID, ">>> Founded updates (" & searchResult.updates.Count & ") <<< " & vbCrLf & strUpdates
 
     'All OK
     detectNow = True
