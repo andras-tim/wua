@@ -67,8 +67,8 @@ if (strArchitecture = "AMD64") Then strArchitecture = "x64"
 '*********************************************************************************************************************** User variables
 '***********************************************************************************************************************
 'Updates filter for updating
-'Dim update_criteria: update_criteria = "IsAssigned=1 and IsHidden=0 and IsInstalled=0 and Type='Software' or Type='Driver'"
-Dim update_criteria: update_criteria = "IsInstalled=0 and DeploymentAction='Installation' or " & _
+'Dim strUpdateCriteria: strUpdateCriteria = "IsAssigned=1 and IsHidden=0 and IsInstalled=0 and Type='Software' or Type='Driver'"
+Dim strUpdateCriteria: strUpdateCriteria = "IsInstalled=0 and DeploymentAction='Installation' or " & _
     "IsPresent=1 and DeploymentAction='Uninstallation' or " & _
     "IsInstalled=1 and DeploymentAction='Installation' and RebootRequired=1 or " & _
     "IsInstalled=0 and DeploymentAction='Uninstallation' and RebootRequired=1"
@@ -731,8 +731,8 @@ Function updateSearcher()
     Set updateAgentSession = CreateObject("Microsoft.Update.Session")
     Set updateSearcher = updateAgentSession.CreateupdateSearcher()
 
-    print_debug strObjID, "Filtering updates: " & update_criteria
-    Set searchResult = updateSearcher.Search(update_criteria)
+    print_debug strObjID, "Filtering updates: " & strUpdateCriteria
+    Set searchResult = updateSearcher.Search(strUpdateCriteria)
 
     'Handle some common errors here
     If Err.Number <> 0 Then
@@ -1083,22 +1083,24 @@ chkMailSets
 'Init Updater logfile
 initUpdateLog
 
-Dim aOK: aOK = True 'All OK
+Dim needReload
 Do
+    needReload = False
+
     'Check and update WUA
-    If aOK Then aOK = chkAgentVer
+    If Not needReload Then needReload = Not chkAgentVer
 
     'Init WUA
-    If aOK Then aOK = chkAgentSets
+    If Not needReload Then needReload = Not chkAgentSets
 
     'Init updateSearcher
-    If aOK Then aOK = updateSearcher
+    If Not needReload Then needReload = Not updateSearcher
 
     'Searching updates
-    If aOK Then aOK = detectNow
+    If Not needReload Then needReload = Not detectNow
 
     'Check update count
-    If aOK Then
+    If Not needReload Then
         If searchResult.updates.Count = 0 Then
             print_debug "ScriptMain", "There's no new update"
             'Print results
@@ -1109,17 +1111,17 @@ Do
     End If
 
     'Downloading updates
-    If aOK Then aOK = dwlUpdates
+    If Not needReload Then needReload = Not dwlUpdates
 
     'Installing updates
-    If aOK Then aOK = instUpdates
+    If Not needReload Then needReload = Not instUpdates
 
     'Print results
-    If aOK Then
+    If Not needReload Then
         getUpdateLog
         sendReport
         endOfScript
     End If
 
-    If Not aOK Then print_debug "ScriptMain", "===RESTART==="
-Loop Until aOK
+    If needReload Then print_debug "ScriptMain", "===RESTART SCRIPT==="
+Loop Until Not needReload
