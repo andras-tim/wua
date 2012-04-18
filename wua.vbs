@@ -756,11 +756,11 @@ Function wuaGetErrorDescription(errNum)' Array :: [""] if we don't know descript
 
     'Init errorlist
     If wuErrorlist = "" Then
-        wuErrorlist = getFileToText(wuErrorlistPath)
+        wuErrorlist = vbCrLf & getFileToText(wuErrorlistPath)
     End If
 
     'Exist errorlist
-    If Not wuErrorlist = "" Then
+    If Not wuErrorlist = "" And Not wuErrorlist = vbCrLf Then
         Dim txt: txt = findLine(wuErrorlist, vbCrLf & hexErrNum & vbTab)
         If Not txt = "" Then
             Dim arr
