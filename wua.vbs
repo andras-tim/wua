@@ -277,6 +277,7 @@ End Sub
 '***********************************************************************************************************************
 Function sendMail(strFrom, strTo, strMail_subject)
     Dim strObjID: strObjID = "sendMail"
+    Dim en, ed
     Dim iMsg, Flds
 
     print_debug strObjID, ">>> Calling sendMail routine <<<" & vbCrLf & _
@@ -928,6 +929,7 @@ End Function
 
 '***********************************************************************************************************************
 Sub chkReboot(beforeorafter)
+    Dim en, ed
     Dim strObjID: strObjID = "chkReboot"
     Dim ComputerStatus: Set ComputerStatus = CreateObject("Microsoft.Update.SystemInfo")
 
