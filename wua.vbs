@@ -61,7 +61,7 @@ Set objReg = GetObject("winmgmts:{impersonationLevel=impersonate}!\\" & strCompu
 update_criteria = "IsInstalled=0 and DeploymentAction='Installation' or IsPresent=1 and DeploymentAction='Uninstallation' or IsInstalled=1 and DeploymentAction='Installation' and RebootRequired=1 or IsInstalled=0 and DeploymentAction='Uninstallation' and RebootRequired=1"
 
 'Full EXE path to Windows Update Agent installation exe. It will install it slently if the PC needs it
-wuaInstallerPath = """\\test1\Samba\WindowsUpdate\WindowsUpdateAgent30-x86.exe"""
+wuaInstallerPath = """\\FIXME.SERVER\SHARE\WindowsUpdate\WindowsUpdateAgent30-x86.exe"""
 
 'Windows Update log file path
 wuLogPath = wshsysenv("WINDIR") & "\WindowsUpdate.log"
